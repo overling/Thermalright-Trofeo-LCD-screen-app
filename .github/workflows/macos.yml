@@ -1,0 +1,178 @@
+name: macOS Installer
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+jobs:
+  build-macos:
+    name: Build macOS app
+    runs-on: macos-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - name: Install system dependencies
+        run: |
+          brew install libusb create-dmg p7zip ffmpeg
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pyinstaller
+          pip install ".[nvidia,hid]"
+
+      - name: Extract version
+        id: version
+        run: |
+          ver="${GITHUB_REF_NAME#v}"
+          echo "VERSION=$ver" >> "$GITHUB_OUTPUT"
+
+      - name: Generate macOS icon
+        run: |
+          ICONSET=src/trcc/assets/icons/app.iconset
+          mkdir -p "$ICONSET"
+          for sz in 16 32 64 128 256 512; do
+            sips -z $sz $sz src/trcc/assets/icons/trcc.png --out "$ICONSET/icon_${sz}x${sz}.png" >/dev/null
+            double=$((sz * 2))
+            if [ $double -le 1024 ]; then
+              sips -z $double $double src/trcc/assets/icons/trcc.png --out "$ICONSET/icon_${sz}x${sz}@2x.png" >/dev/null
+            fi
+          done
+          iconutil -c icns "$ICONSET" -o src/trcc/assets/icons/app.icns
+
+      - name: Build app with PyInstaller
+        run: |
+          pyinstaller \
+            --name "TRCC" \
+            --onedir \
+            --windowed \
+            --icon src/trcc/assets/icons/app.icns \
+            --add-data "src/trcc/assets:trcc/assets" \
+            --add-data "src/trcc/ui/gui/assets:trcc/ui/gui/assets" \
+            --hidden-import PySide6.QtSvg \
+            --hidden-import pynvml \
+            --collect-submodules trcc \
+            --osx-bundle-identifier com.thermalright.trcc \
+            --noconfirm \
+            src/trcc/__main__.py
+
+      - name: Log PyInstaller output
+        run: |
+          echo "=== dist/ top-level ==="
+          ls -la dist/
+          echo "=== .app bundle MacOS/ (with symlinks) ==="
+          ls -la dist/TRCC.app/Contents/MacOS/ 2>/dev/null || echo "No MacOS/ dir"
+          echo "=== .app bundle Frameworks/ (first 10) ==="
+          ls dist/TRCC.app/Contents/Frameworks/ 2>/dev/null | head -10 || echo "No Frameworks/ dir"
+          echo "=== Finding TRCC executable (following symlinks) ==="
+          find -L dist/TRCC.app -name "TRCC" -type f 2>/dev/null || echo "No TRCC found"
+
+      - name: Bundle dependencies
+        run: |
+          # Bundle 7z for theme extraction (p7zip is LGPL, redistributable)
+          cp "$(which 7z)" dist/TRCC.app/Contents/MacOS/7z
+          # Bundle ffmpeg for video playback (LGPL, like C# app)
+          cp "$(which ffmpeg)" dist/TRCC.app/Contents/MacOS/ffmpeg
+          # NOTE: no CLI symlink — macOS APFS is case-insensitive,
+          # ln -sf TRCC .../trcc would DELETE the TRCC executable
+
+          # Bundle libusb (pyusb loads via ctypes, PyInstaller misses it)
+          LIBUSB_DYLIB="$(brew --prefix libusb)/lib/libusb-1.0.dylib"
+          if [ -f "$LIBUSB_DYLIB" ]; then
+            cp "$LIBUSB_DYLIB" dist/TRCC.app/Contents/Frameworks/
+          fi
+
+      - name: Log build environment
+        run: |
+          echo "=== macOS Build Environment ==="
+          echo "macOS: $(sw_vers -productVersion)"
+          echo "Arch: $(uname -m)"
+          echo "Python: $(python3 --version)"
+          echo "PyInstaller: $(python3 -c 'import PyInstaller; print(PyInstaller.__version__)')"
+          echo "PySide6: $(python3 -c 'import PySide6; print(PySide6.__version__)')"
+          echo "7z: $(which 7z || echo 'not found')"
+          echo "ffmpeg: $(which ffmpeg || echo 'not found')"
+          echo "libusb: $(brew --prefix libusb)/lib/libusb-1.0.dylib"
+
+      - name: Verify bundled dependencies
+        run: |
+          echo "=== Full Bundle Structure (following symlinks) ==="
+          find -L dist/TRCC.app/Contents -type f | head -50
+          echo ""
+          echo "=== Contents/MacOS/ ==="
+          ls -la dist/TRCC.app/Contents/MacOS/ 2>/dev/null || echo "(empty or missing)"
+          echo "=== Contents/Frameworks/ (first 20) ==="
+          ls -la dist/TRCC.app/Contents/Frameworks/ 2>/dev/null | head -20 || echo "(empty or missing)"
+          echo "=== Contents/Resources/ (first 10) ==="
+          ls dist/TRCC.app/Contents/Resources/ 2>/dev/null | head -10 || echo "(empty or missing)"
+          echo ""
+          echo "=== Verification ==="
+          missing=()
+          # Check TRCC executable directly (PyInstaller puts it in Contents/MacOS/)
+          if [ -f "dist/TRCC.app/Contents/MacOS/TRCC" ]; then
+            echo "  TRCC executable: dist/TRCC.app/Contents/MacOS/TRCC ($(wc -c < dist/TRCC.app/Contents/MacOS/TRCC) bytes)"
+          else
+            echo "  TRCC executable: NOT FOUND in Contents/MacOS/"
+            echo "  All executables in bundle (following symlinks):"
+            find -L dist/TRCC.app -type f -perm +111 2>/dev/null | head -20
+            missing+=("TRCC")
+          fi
+          [ -f "dist/TRCC.app/Contents/MacOS/7z" ] && echo "  7z: OK" || missing+=("7z")
+          [ -f "dist/TRCC.app/Contents/MacOS/ffmpeg" ] && echo "  ffmpeg: OK" || missing+=("ffmpeg")
+          # libusb could be in Frameworks (PyInstaller) or copied there by us
+          if find -L dist/TRCC.app/Contents/Frameworks -name "libusb*" -type f 2>/dev/null | grep -q .; then
+            echo "  libusb: OK"
+          else
+            missing+=("libusb")
+          fi
+          echo ""
+          if [ ${#missing[@]} -gt 0 ]; then
+            echo "::error::FAILED — Missing: ${missing[*]}"
+            exit 1
+          fi
+          echo "PASSED — all dependencies bundled"
+
+      - name: Create DMG
+        run: |
+          create-dmg \
+            --volname "TRCC ${{ steps.version.outputs.VERSION }}" \
+            --window-pos 200 120 \
+            --window-size 600 400 \
+            --icon-size 100 \
+            --icon "TRCC.app" 150 185 \
+            --app-drop-link 450 185 \
+            --no-internet-enable \
+            "trcc-${{ steps.version.outputs.VERSION }}-macos.dmg" \
+            dist/TRCC.app
+
+      - name: Upload DMG artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: trcc-macos-dmg
+          path: trcc-${{ steps.version.outputs.VERSION }}-macos.dmg
+
+      - name: Create fixed-name alias for stable download URL
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: cp "trcc-${{ steps.version.outputs.VERSION }}-macos.dmg" trcc-latest-macos.dmg
+
+      - name: Attach to GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release upload "$GITHUB_REF_NAME" \
+            "trcc-${{ steps.version.outputs.VERSION }}-macos.dmg" \
+            trcc-latest-macos.dmg \
+            --clobber
