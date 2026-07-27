@@ -59,7 +59,7 @@ body:
     attributes:
       label: Before submitting
       options:
-        - label: I'm on the latest version (`pip install --upgrade trcc-linux`, or the latest installer)
+        - label: I'm on the latest version from the Releases page
           required: false
         - label: I pasted my `trcc report` above — or my install/launch error if it won't run
           required: true
