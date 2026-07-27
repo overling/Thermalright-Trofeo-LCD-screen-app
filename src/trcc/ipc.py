@@ -648,6 +648,14 @@ class SingleInstance:
 
 def _instance_socket_path(name: str) -> Path:
     """Per-UI socket path (one file per UI flavour)."""
+    import sys as _sys
+    _exe_dir = Path(_sys.executable).parent
+    if (
+        getattr(_sys, "frozen", False)
+        or (_exe_dir / "trcc-user").exists()
+        or (_exe_dir / ".trcc").exists()
+    ):
+        return _exe_dir / ".trcc" / f"{name}.sock"
     runtime = os.environ.get("XDG_RUNTIME_DIR")
     if runtime:
         base = Path(runtime) / SingleInstance._DIR_NAME
@@ -676,9 +684,18 @@ def _msvcrt_acquire(name: str) -> Any | None:
         # Not on Windows; the AF_UNIX branch would have been taken.
         # Reaching here means an exotic platform — fail open.
         return None
-    lock_path = (
-        Path.home() / ".cache" / SingleInstance._DIR_NAME / f"{name}.lock"
-    )
+    import sys as _sys
+    _exe_dir = Path(_sys.executable).parent
+    if (
+        getattr(_sys, "frozen", False)
+        or (_exe_dir / "trcc-user").exists()
+        or (_exe_dir / ".trcc").exists()
+    ):
+        lock_path = _exe_dir / ".trcc" / f"{name}.lock"
+    else:
+        lock_path = (
+            Path.home() / ".cache" / SingleInstance._DIR_NAME / f"{name}.lock"
+        )
     lock_path.parent.mkdir(parents=True, exist_ok=True)
     # The file handle must stay open for the process lifetime — closing
     # it releases the lock — so deliberately do NOT use a with-block.

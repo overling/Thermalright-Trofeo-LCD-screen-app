@@ -49,10 +49,26 @@ class WindowsPaths(Paths):
     """Windows user-data locations via APPDATA / LOCALAPPDATA."""
 
     def __init__(self) -> None:
-        appdata = os.environ.get("APPDATA") or str(Path.home() / "AppData/Roaming")
-        local = os.environ.get("LOCALAPPDATA") or str(Path.home() / "AppData/Local")
-        self._root = Path(appdata) / "trcc"
-        self._user_content = Path(local) / "trcc-user"
+        import sys
+        exe_dir = Path(sys.executable).parent
+        # Portable layout: detect either sys.frozen (PyInstaller) OR the
+        # presence of trcc-user/ or .trcc/ next to the exe. The folder
+        # marker is the reliable signal — some onedir builds don't set
+        # sys.frozen the way the bootloader docs claim, but the portable
+        # install always ships with trcc-user/ and .trcc/ siblings.
+        portable = (os.environ.get("TRCC_PORTABLE") == "1"
+                    or (exe_dir / "trcc-user").exists()
+                    or (exe_dir / ".trcc").exists())
+        if portable:
+            # Portable / PyInstaller build: keep everything next to the .exe
+            # so the app is self-contained and survives a reinstall/move.
+            self._root = exe_dir / ".trcc"
+            self._user_content = exe_dir / "trcc-user"
+        else:
+            appdata = os.environ.get("APPDATA") or str(Path.home() / "AppData/Roaming")
+            local = os.environ.get("LOCALAPPDATA") or str(Path.home() / "AppData/Local")
+            self._root = Path(appdata) / "trcc"
+            self._user_content = Path(local) / "trcc-user"
         log.info("WindowsPaths: root=%s user_content=%s",
                  self._root, self._user_content)
 

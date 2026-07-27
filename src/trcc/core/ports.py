@@ -637,6 +637,8 @@ class SensorEnumerator(ABC):
             name=g.name,
             temp=_safe(g.temp), usage=_safe(g.usage),
             clock=_safe(g.clock), power=_safe(g.power),
+            vram_used=_safe(g.vram_used), vram_total=_safe(g.vram_total),
+            vram_free=_safe(getattr(g, "vram_free", None)),
         ) for g in self.gpus()]
         primary = self.primary_gpu()
         mem = self.memory()
@@ -663,6 +665,9 @@ class SensorEnumerator(ABC):
             gpu_usage=_safe(primary.usage) if primary else 0.0,
             gpu_clock=_safe(primary.clock) if primary else 0.0,
             gpu_power=_safe(primary.power) if primary else 0.0,
+            gpu_vram_used=readings.get("gpu:primary:vram_used", 0.0),
+            gpu_vram_total=readings.get("gpu:primary:vram_total", 0.0),
+            gpu_vram_free=readings.get("gpu:primary:vram_free", 0.0),
             mem_percent=_safe(mem.percent),
             mem_available=_safe(mem.available),
             mem_used=readings.get("memory:used", 0.0),

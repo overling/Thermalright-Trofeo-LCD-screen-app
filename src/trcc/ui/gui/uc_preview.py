@@ -47,6 +47,7 @@ class UCPreview(BasePanel):
     element_drag_move = Signal(int, int)   # LCD-scaled (x, y)
     element_drag_end = Signal()
     element_nudge = Signal(int, int)       # LCD-scaled (dx, dy)
+    popOutRequested = Signal()
 
     def __init__(self, width: int, height: int, parent=None):
         super().__init__(parent, width=Sizes.PREVIEW_FRAME, height=Sizes.PREVIEW_PANEL_H)
@@ -62,20 +63,40 @@ class UCPreview(BasePanel):
         layout.setContentsMargins(0, 0, 0, 10)
         layout.setSpacing(5)
 
-        # Frame container (500x500) with background image
-        self.frame_container = QFrame()
-        self.frame_container.setFixedSize(Sizes.PREVIEW_FRAME, Sizes.PREVIEW_FRAME)
-
         left, top, w, h, frame_name = self._offset_info
 
+        # For widescreen panels (aspect ratio < 0.6), resize the frame
+        # container to match the LCD aspect ratio instead of the fixed 500x500.
+        # This eliminates the large black area around the thin bezel strip.
+        # The preview_label fills the entire frame_container.
+        aspect = self._lcd_height / self._lcd_width if self._lcd_width else 1.0
+        if aspect < 0.6:
+            frame_w = Sizes.PREVIEW_FRAME
+            frame_h = int(Sizes.PREVIEW_FRAME * aspect)
+            preview_left = 0
+            preview_top = 0
+            preview_w = frame_w
+            preview_h = frame_h
+        else:
+            frame_w = Sizes.PREVIEW_FRAME
+            frame_h = Sizes.PREVIEW_FRAME
+            preview_left = left
+            preview_top = top
+            preview_w = w
+            preview_h = h
+
+        # Frame container with background image
+        self.frame_container = QFrame()
+        self.frame_container.setFixedSize(frame_w, frame_h)
+
         set_background_pixmap(self.frame_container, frame_name,
-            Sizes.PREVIEW_FRAME, Sizes.PREVIEW_FRAME,
+            frame_w, frame_h,
             fallback_style=f"background-color: {Colors.BASE_BG};")
 
         # Preview label positioned inside frame at the LCD area
-        self.preview_label = ImageLabel(w, h)
+        self.preview_label = ImageLabel(preview_w, preview_h)
         self.preview_label.setParent(self.frame_container)
-        self.preview_label.move(left, top)
+        self.preview_label.move(preview_left, preview_top)
         self.preview_label.clicked.connect(self._on_preview_clicked)
         self.preview_label.drag_started.connect(self._on_drag_started)
         self.preview_label.drag_moved.connect(self._on_drag_moved)
@@ -86,14 +107,18 @@ class UCPreview(BasePanel):
 
         # Status label
         self.status_label = QLabel("Ready")
-        self.status_label.setStyleSheet(f"color: {Colors.STATUS_TEXT}; font-size: 11px;")
+        self.status_label.setStyleSheet(f"color: {Colors.STATUS_TEXT}; font-size: 16px;")
         self.status_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(self.status_label)
 
-        # Video progress bar container (hidden by default)
+        # Video progress bar container — always visible so the fit-mode
+        # buttons (H/W) and play/pause are reachable even without a video
+        # loaded.  The fit buttons control how the background image is
+        # fitted to the device resolution (width-fit crops top/bottom,
+        # height-fit crops sides, stretch fills exactly).
         self.progress_container = QFrame()
         self.progress_container.setFixedSize(Sizes.VIDEO_CONTROLS_W, Sizes.VIDEO_CONTROLS_H)
-        self.progress_container.setVisible(False)
+        self.progress_container.setVisible(True)
 
         set_background_pixmap(self.progress_container, Assets.VIDEO_CONTROLS_BG,
                               Sizes.VIDEO_CONTROLS_W, Sizes.VIDEO_CONTROLS_H)
@@ -118,7 +143,7 @@ class UCPreview(BasePanel):
         self.time_label = QLabel("00:00 / 00:00", self.progress_container)
         self.time_label.setGeometry(*Layout.TIME_LABEL)
         self.time_label.setStyleSheet(
-            f"color: {Colors.STATUS_TEXT}; font-size: 10px; background: transparent;"
+            f"color: {Colors.STATUS_TEXT}; font-size: 16px; background: transparent;"
         )
 
         # Progress slider
@@ -140,16 +165,28 @@ class UCPreview(BasePanel):
             btn.setIconSize(btn.size())
         else:
             btn.setText(fallback)
+            # Make fallback text visible on dark video-controls background
+            btn.setStyleSheet(
+                "QPushButton { color: #e0e0e0; background-color: rgba(60,60,60,180);"
+                " border: 1px solid #555; border-radius: 3px; font-size: 14px; font-weight: bold; }"
+                " QPushButton:hover { background-color: rgba(90,90,90,200); color: white; }"
+            )
         btn.setFlat(True)
-        btn.setStyleSheet(Styles.FLAT_BUTTON)
+        if pix.isNull():
+            pass  # style already set above for text fallback
+        else:
+            btn.setStyleSheet(Styles.FLAT_BUTTON)
         btn.setCursor(Qt.CursorShape.PointingHandCursor)
         btn.setToolTip(tooltip)
         btn.clicked.connect(handler)
+        btn.raise_()
+        btn.show()
         return btn
 
     def _widget_to_lcd(self, wx: int, wy: int) -> tuple[int, int]:
         """Translate preview widget coordinates to LCD coordinates."""
-        _, _, pw, ph, _ = self._offset_info
+        pw = self.preview_label._width
+        ph = self.preview_label._height
         if pw <= 0 or ph <= 0:
             return (0, 0)
         lx = int(wx * self._lcd_width / pw)
@@ -169,7 +206,8 @@ class UCPreview(BasePanel):
     def _on_nudge(self, dx: int, dy: int):
         """Forward keyboard nudge as LCD-scaled delta."""
         log.debug("_on_nudge: dx=%s dy=%s", dx, dy)
-        _, _, pw, ph, _ = self._offset_info
+        pw = self.preview_label._width
+        ph = self.preview_label._height
         if pw <= 0 or ph <= 0:
             return
         lcd_dx = int(dx * self._lcd_width / pw) if dx else 0
@@ -214,7 +252,11 @@ class UCPreview(BasePanel):
         self.status_label.setText(text)
 
     def show_video_controls(self, show=True):
-        self.progress_container.setVisible(show)
+        # Container stays visible so fit-mode buttons (H/W) are always
+        # accessible.  Only the progress slider + time label are toggled,
+        # since those are only meaningful during video playback.
+        self.progress_slider.setVisible(show)
+        self.time_label.setVisible(show)
 
     def set_playing(self, playing):
         refs = getattr(self.play_btn, '_img_refs', None)
@@ -250,11 +292,35 @@ class UCPreview(BasePanel):
             "preview.set_resolution: lcd=%dx%d → bezel=%s area=%dx%d@(%d,%d)",
             width, height, frame_name, w, h, left, top,
         )
-        self.preview_label.setFixedSize(w, h)
-        self.preview_label._width = w
-        self.preview_label._height = h
-        self.preview_label.move(left, top)
+
+        # For widescreen panels, resize frame_container to match LCD aspect
+        # ratio and make preview fill it entirely (no black border area).
+        aspect = height / width if width else 1.0
+        if aspect < 0.6:
+            frame_w = Sizes.PREVIEW_FRAME
+            frame_h = int(Sizes.PREVIEW_FRAME * aspect)
+            preview_left = 0
+            preview_top = 0
+            preview_w = frame_w
+            preview_h = frame_h
+        else:
+            frame_w = Sizes.PREVIEW_FRAME
+            frame_h = Sizes.PREVIEW_FRAME
+            preview_left = left
+            preview_top = top
+            preview_w = w
+            preview_h = h
+
+        self.frame_container.setFixedSize(frame_w, frame_h)
+        self.preview_label.setFixedSize(preview_w, preview_h)
+        self.preview_label._width = preview_w
+        self.preview_label._height = preview_h
+        self.preview_label.move(preview_left, preview_top)
         self.set_frame_image(frame_name)
 
     def get_lcd_size(self):
         return (self._lcd_width, self._lcd_height)
+
+    def contextMenuEvent(self, event):
+        event.accept()
+        self.popOutRequested.emit()

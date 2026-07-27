@@ -9,7 +9,7 @@ import logging
 
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QColor, QPalette
-from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QScrollArea, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QPushButton, QScrollArea, QVBoxLayout, QWidget
 
 from ...core.models import (
     SENSOR_TO_OVERLAY,
@@ -58,12 +58,12 @@ class SensorItem(QFrame):
         # Color indicator
         indicator = QLabel('\u25c6')
         indicator.setFixedWidth(12)
-        indicator.setStyleSheet(f"color: {color}; font-size: 6px; background: transparent;")
+        indicator.setStyleSheet(f"color: {color}; font-size: 12px; background: transparent;")
         layout.addWidget(indicator)
 
         # Sensor name
         name_lbl = QLabel(label)
-        name_lbl.setStyleSheet("color: #AAAAAA; font-size: 9px; background: transparent;")
+        name_lbl.setStyleSheet("color: #AAAAAA; font-size: 12px; background: transparent;")
         name_lbl.setFixedWidth(70)
         layout.addWidget(name_lbl)
 
@@ -71,7 +71,7 @@ class SensorItem(QFrame):
 
         # Sensor value
         self.value_label = QLabel('--')
-        self.value_label.setStyleSheet(f"color: {color}; font-size: 9px; font-weight: bold; background: transparent;")
+        self.value_label.setStyleSheet(f"color: {color}; font-size: 12px; font-weight: bold; background: transparent;")
         self.value_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         self.value_label.setFixedWidth(80)
         layout.addWidget(self.value_label)
@@ -124,6 +124,7 @@ class UCActivitySidebar(QWidget):
     """
 
     sensor_clicked = Signal(object)  # OverlayElementConfig
+    closed = Signal()                  # User clicked close button
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -148,7 +149,7 @@ class UCActivitySidebar(QWidget):
         # Title
         title = QLabel("Activity")
         title.setStyleSheet(
-            "color: white; font-size: 10px; font-weight: bold; "
+            "color: white; font-size: 12px; font-weight: bold; "
             "background: transparent; padding-left: 8px;"
         )
         main_layout.addWidget(title)
@@ -165,6 +166,18 @@ class UCActivitySidebar(QWidget):
         )
         main_layout.addWidget(scroll)
 
+        # Close button at bottom
+        close_btn = QPushButton("Close", self)
+        close_btn.setFixedHeight(28)
+        close_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        close_btn.setStyleSheet(
+            "QPushButton { color: #AAAAAA; font-size: 12px; "
+            "background-color: #2A2A2A; border: none; border-radius: 4px; }"
+            "QPushButton:hover { color: white; background-color: #3A3A3A; }"
+        )
+        close_btn.clicked.connect(self._on_close)
+        main_layout.addWidget(close_btn)
+
         # Inner widget
         inner = QWidget()
         inner_layout = QVBoxLayout(inner)
@@ -178,7 +191,7 @@ class UCActivitySidebar(QWidget):
             header = QLabel(f"  \u25aa {category.upper()}")
             header.setFixedHeight(24)
             header.setStyleSheet(
-                f"color: {color}; font-size: 9px; font-weight: bold; "
+                f"color: {color}; font-size: 12px; font-weight: bold; "
                 f"background-color: #2A2A2A; padding-top: 3px;"
             )
             inner_layout.addWidget(header)
@@ -196,6 +209,10 @@ class UCActivitySidebar(QWidget):
             "UCActivitySidebar._setup_ui: built %d sensor items",
             len(self._sensor_items),
         )
+
+    def _on_close(self):
+        log.info("UCActivitySidebar._on_close: hiding activity sidebar")
+        self.closed.emit()
 
     def _on_sensor_clicked(self, config):
         log.info(

@@ -47,10 +47,23 @@ _HELP_COMMANDS: frozenset[str] = frozenset({"help", "?"})
 
 
 def _history_path() -> Path:
-    """Persist REPL history across sessions under ``$XDG_STATE_HOME``."""
-    xdg_state = os.environ.get("XDG_STATE_HOME")
-    base = Path(xdg_state) if xdg_state else Path.home() / ".local" / "state"
-    target = base / "trcc"
+    """Persist REPL history across sessions.
+
+    Portable builds keep it next to the exe; non-portable runs use
+    ``$XDG_STATE_HOME`` (or ``~/.local/state``).
+    """
+    import sys as _sys
+    _exe_dir = Path(_sys.executable).parent
+    if (
+        getattr(_sys, "frozen", False)
+        or (_exe_dir / "trcc-user").exists()
+        or (_exe_dir / ".trcc").exists()
+    ):
+        target = _exe_dir / ".trcc"
+    else:
+        xdg_state = os.environ.get("XDG_STATE_HOME")
+        base = Path(xdg_state) if xdg_state else Path.home() / ".local" / "state"
+        target = base / "trcc"
     target.mkdir(parents=True, exist_ok=True)
     return target / "shell_history"
 

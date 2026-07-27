@@ -39,7 +39,6 @@ _DEFAULT_BRIGHTNESS = 100
 # (legacy SPLIT_MODE_RESOLUTIONS) instead of the brightness-cycle button.
 SPLIT_MODE_RESOLUTIONS: frozenset[tuple[int, int]] = frozenset({
     (480, 1280), (1280, 480),
-    (440, 1920), (1920, 440),
     (462, 1920), (1920, 462),
 })
 

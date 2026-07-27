@@ -94,6 +94,7 @@ class SystemInfoPanel(QWidget):
         self._color = CATEGORY_COLORS.get(config.category_id, '#888888')
         self._value_labels: list[QLabel] = []
         self._selector_btns: list[QPushButton] = []
+        self._custom_row_labels: list[QLabel] = []
         # First-populate flag — INFO on the first ``update_values``
         # call shows which panel got data first and what readings
         # bound, then DEBUG so 2 s cadence doesn't drown the log.
@@ -113,7 +114,7 @@ class SystemInfoPanel(QWidget):
         self._sel_pixmap = Assets.load_pixmap('sysinfo_select.png', 16, 30)
 
         # Value labels and selector buttons (row labels are baked into the PNG)
-        value_font = QFont('Arial', 10)
+        value_font = QFont('Arial', 14)
 
         for i in range(4):
             # Value label (right-aligned, shows live readings)
@@ -142,7 +143,7 @@ class SystemInfoPanel(QWidget):
                 sel.setText("↓")
                 sel.setStyleSheet(
                     "QPushButton { background: transparent; border: none; "
-                    "color: #888; font-size: 16px; }"
+                    "color: #888; font-size: 20px; }"
                     "QPushButton:hover { color: white; }"
                 )
             row_idx = i
@@ -152,11 +153,22 @@ class SystemInfoPanel(QWidget):
 
         # Delete button for custom panels (category_id=0)
         if config.category_id == 0:
+            for i, binding in enumerate(config.sensors[:4]):
+                label = QLabel(binding.label or f"Sensor {i + 1}", self)
+                label.setGeometry(18, VALUE_POSITIONS[i][1], 120, 24)
+                label.setStyleSheet(
+                    "color: #D0D0D0; font-size: 20px; font-weight: bold; "
+                    "background: transparent;"
+                )
+                label.setAlignment(
+                    Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+                self._custom_row_labels.append(label)
+
             self._del_btn = QPushButton("✕", self)
             self._del_btn.setGeometry(245, 5, 16, 16)
             self._del_btn.setStyleSheet(
                 "QPushButton { background: transparent; border: none; "
-                "color: #666; font-size: 12px; }"
+                "color: #666; font-size: 16px; }"
                 "QPushButton:hover { color: #FF4444; }"
             )
             self._del_btn.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -169,7 +181,7 @@ class SystemInfoPanel(QWidget):
             self._name_edit.setToolTip("Panel name")
             self._name_edit.setStyleSheet(
                 "QLineEdit { background: transparent; border: none; "
-                "border-bottom: 1px solid #444; color: #C0C0C0; font-size: 10px; }"
+                "border-bottom: 1px solid #444; color: #C0C0C0; font-size: 16px; }"
                 "QLineEdit:focus { border-bottom: 1px solid #9375FF; }"
             )
             self._name_edit.editingFinished.connect(self._on_name_edited)
@@ -497,7 +509,7 @@ class UCSystemInfo(QWidget):
         # Page indicator
         self._page_label = QLabel(f"{self._page + 1}/{total_pages}", self)
         self._page_label.setGeometry(640, 655, 40, 24)
-        self._page_label.setStyleSheet("color: #888; font-size: 10px; background: transparent;")
+        self._page_label.setStyleSheet("color: #888; font-size: 16px; background: transparent;")
         self._page_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._page_label.show()
 

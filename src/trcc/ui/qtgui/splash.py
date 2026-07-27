@@ -60,7 +60,7 @@ class _FrameSplash(QFrame):
             "background-color: #1a1a1a; color: #e0e0e0;"
             "border: 1px solid #444;",
         )
-        title = QLabel("TRCC Linux", self)
+        title = QLabel("TRCC", self)
         title_font = QFont()
         title_font.setPointSize(24)
         title_font.setBold(True)

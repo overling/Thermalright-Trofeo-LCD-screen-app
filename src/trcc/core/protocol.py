@@ -112,7 +112,8 @@ FBL_PROFILES: dict[int, DeviceProfile] = {
     129: DeviceProfile(480,  480,
                        encode_pm_bases=((6, 180),)),                # alias for 72
     192: DeviceProfile(1920, 462,  jpeg=True, rotate=True, widescreen=True,
-                       encode_base=180),
+                       encode_base=180,
+                       encode_sub_bases=((2, 0), (3, 0), (4, 0))),  # sub 2/3/4 → 0° (#169)
     224: DeviceProfile(854,  480,  jpeg=True, rotate=True, widescreen=True),
 }
 # fmt: on
@@ -147,7 +148,7 @@ _PM_TO_FBL_OVERRIDES: dict[int, int] = {
     65:  192,   # 1920x462
     66:  192,   # 1920x462
     68:  192,   # 1280x480 (disambiguated in _FBL_192_BY_PM)
-    69:  192,   # 1920x440 (disambiguated in _FBL_192_BY_PM)
+    69:  192,   # 1920x400 (disambiguated in _FBL_192_BY_PM)
 }
 
 
@@ -165,7 +166,7 @@ _FBL_224_BY_PM: dict[int, tuple[int, int]] = {
 # FBL 192 is shared by 3 resolutions — PM byte disambiguates
 _FBL_192_BY_PM: dict[int, tuple[int, int]] = {
     68: (1280, 480),
-    69: (1920, 440),
+    69: (1920, 400),
 }
 
 

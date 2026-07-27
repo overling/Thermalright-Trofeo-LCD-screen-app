@@ -152,7 +152,7 @@ _STYLE_FLAT_CHECKABLE_BTN = (
 )
 _STYLE_CHECKABLE_BTN = (
     "QPushButton { background: transparent; color: #aaa; border: none; "
-    "font-size: 11px; }"
+    "font-size: 12px; }"
     "QPushButton:checked { background: rgba(33, 150, 243, 60); color: white; }"
     "QPushButton:hover { background: rgba(255, 255, 255, 20); }"
 )
@@ -369,7 +369,7 @@ class UCLedControl(QWidget):
         self._fingerprint_label = QLabel("", self)
         self._fingerprint_label.setGeometry(8, 2, 460, 18)
         self._fingerprint_label.setStyleSheet(
-            "color: #7A7A7A; font-family: monospace; font-size: 11px;"
+            "color: #7A7A7A; font-family: monospace; font-size: 12px;"
             " background: transparent;"
         )
         self._fingerprint_label.setTextInteractionFlags(
@@ -419,7 +419,7 @@ class UCLedControl(QWidget):
             spinbox.setValue(255 if i == 0 else 0)
             spinbox.setStyleSheet(
                 "color: white; background: rgba(40, 40, 40, 180); "
-                "border: none; font-size: 11px;"
+                "border: none; font-size: 12px;"
             )
             spinbox.valueChanged.connect(
                 lambda val, idx=i: self._on_spinbox_changed(idx, val)
@@ -496,7 +496,7 @@ class UCLedControl(QWidget):
             TEMP_LEGEND_W, 14
         )
         self._temp_legend_labels.setStyleSheet(
-            "color: #aaa; font-size: 10px; background: transparent;"
+            "color: #aaa; font-size: 12px; background: transparent;"
         )
         self._temp_legend_labels.setVisible(False)
 
@@ -522,7 +522,7 @@ class UCLedControl(QWidget):
         self._brightness_label.setGeometry(
             BRIGHT_X + BRIGHT_W + 5, BRIGHT_Y, 40, 20)
         self._brightness_label.setStyleSheet(
-            "color: white; font-size: 11px; background: transparent;")
+            "color: white; font-size: 12px; background: transparent;")
 
         # Single-shot debounce — the label tracks the slider live, but the
         # device write fires only once the slider settles (#202).
@@ -606,7 +606,7 @@ class UCLedControl(QWidget):
         self._carousel_interval.setValidator(QIntValidator(1, 60, self))
         self._carousel_interval.setStyleSheet(
             "QLineEdit { background: rgb(67, 67, 67); color: white; "
-            "border: none; font-size: 11px; }")
+            "border: none; font-size: 12px; }")
         self._carousel_interval.setToolTip("Carousel rotation interval (seconds)")
         self._carousel_interval.textChanged.connect(
             self._on_carousel_interval_changed)
@@ -847,7 +847,7 @@ class UCLedControl(QWidget):
         self._ddr_combo.setCurrentIndex(1)  # Default: ×2 (DDR)
         self._ddr_combo.setStyleSheet(
             "QComboBox { background: #333; color: rgb(180, 150, 83); "
-            "border: 1px solid #555; font-size: 11px; }"
+            "border: 1px solid #555; font-size: 12px; }"
             "QComboBox::drop-down { border: none; }"
             "QComboBox QAbstractItemView { background: #333; "
             "color: rgb(180, 150, 83); selection-background-color: #555; }")
@@ -912,7 +912,7 @@ class UCLedControl(QWidget):
         self._disk_selector.setGeometry(13 + 304, 656 + 21, 180, 24)
         self._disk_selector.setStyleSheet(
             "QComboBox { background: #333; color: rgb(180, 150, 83); "
-            "border: 1px solid #555; font-size: 11px; }"
+            "border: 1px solid #555; font-size: 12px; }"
             "QComboBox::drop-down { border: none; }"
             "QComboBox QAbstractItemView { background: #333; "
             "color: rgb(180, 150, 83); selection-background-color: #555; }")
@@ -1153,7 +1153,7 @@ class UCLedControl(QWidget):
                         # png, checked) → white text — matching the baked look.
                         btn.setStyleSheet(
                             f"QPushButton {{ border: none;"
-                            f" color: rgb(160,160,160); font-size: 11px;"
+                            f" color: rgb(160,160,160); font-size: 12px;"
                             f" padding-left: 36px; background-origin: border;"
                             f" background-image: url({normal_path}); "
                             f"background-repeat: no-repeat; }}"
@@ -1635,11 +1635,11 @@ class UCLedControl(QWidget):
         if active:
             return (
                 "QPushButton { background: rgba(33, 150, 243, 60); "
-                "color: white; border: none; font-size: 10px; }"
+                "color: white; border: none; font-size: 12px; }"
             )
         return (
             "QPushButton { background: transparent; color: #ccc; "
-            "border: none; font-size: 10px; }"
+            "border: none; font-size: 12px; }"
             "QPushButton:checked { background: rgba(33, 150, 243, 60); "
             "color: white; }"
             "QPushButton:hover { background: rgba(255, 255, 255, 20); }"

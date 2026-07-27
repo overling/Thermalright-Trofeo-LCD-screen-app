@@ -154,6 +154,23 @@ _VARIANT_REGISTRY: dict[
         101: {None: _v('A1ELITE VISION')},
         128: {None: _v('A1LM24')},
     },
+    # ── LY bulk LCD (Trofeo Vision 9.16) — 0x0416:0x5408 / 0x5409 ───────
+    # PM = 64 + resp[20] (LY) or 50 + resp[36] (LY1); the C# ADDUserButton
+    # table maps the Trofeo family PMs to A1TROFEO_* button labels.  Without
+    # these entries the sidebar falls back to the generic registry product
+    # name instead of the proper "TROFEO 9 16" / "TROFEO 11 3" label.
+    (0x0416, 0x5408): {
+        65: {None: _v('A1TROFEO_9_16')},
+        66: {None: _v('A1TROFEO_9_16')},
+        68: {None: _v('A1TROFEO_9_16')},
+        69: {None: _v('A1TROFEO_11_3')},
+    },
+    (0x0416, 0x5409): {
+        65: {None: _v('A1TROFEO_9_16')},
+        66: {None: _v('A1TROFEO_9_16')},
+        68: {None: _v('A1TROFEO_9_16')},
+        69: {None: _v('A1TROFEO_11_3')},
+    },
     # ── Bulk USBLCDNEW (case 257) + SCSI thermalright (case 257 in C#) ─
     # All share the _BULK_VARIANTS PM table — same dispatcher branch in C#.
     (0x87AD, 0x70DB): _BULK_VARIANTS,

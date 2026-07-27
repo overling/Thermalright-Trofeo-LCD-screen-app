@@ -1,9 +1,12 @@
-"""Windows WinUSB driver diagnostic + setup instructions.
+"""Windows WinUSB driver diagnostic + automatic setup.
 
 The Windows analog of the Linux ``_udev.py`` and FreeBSD ``_devd.py``
-installers — but Windows can't silently install kernel drivers without
-elevation and a signed driver package.  So this module's job is
-**diagnose the state and give the user copy-paste-ready instructions**.
+installers.  Historically Windows couldn't silently install kernel
+drivers without a signed driver package, so this module only diagnosed
+the state and printed Zadig instructions.  As of 2026-07-16 the app
+bundles a WinUSB INF that references Windows' inbox ``winusb.sys`` —
+installed silently via ``pnputil /add-driver`` (admin-only, which the
+packaged app already has via its UAC manifest).
 
 What's actually needed
 ----------------------
@@ -11,40 +14,88 @@ For pyusb / libusb to talk to a TRCC device on Windows, the device's
 USB interface must be bound to ``WinUSB.sys`` (or ``libusbK``,
 ``libusb-win32``).  Windows' default behaviour for a generic USB
 device is to bind it to no driver at all (or the wrong one), so libusb
-fails with ``NoBackendError`` until the user runs Zadig — see
-https://zadig.akeo.ie/ — to swap the driver to WinUSB.
+fails with ``NoBackendError`` until WinUSB is bound.
 
 This wizard:
 
   1. Tries to enumerate every device in the registry via pyusb.
   2. For each device that is **physically present but invisible to
-     pyusb**, prints a one-liner naming exactly which device needs
-     WinUSB and a Zadig command sequence the user can paste.
-  3. Returns 0 if every present device is visible, 1 if any need
+     pyusb**, attempts silent WinUSB installation via the bundled INF
+     + ``pnputil``.
+  3. If silent install fails, falls back to printed Zadig instructions
+     (https://zadig.akeo.ie/) as a manual fallback.
+  4. Returns 0 if every present device is visible, 1 if any still need
      driver work, 2 if pyusb itself isn't usable (libusb-1.0.dll
      missing from PATH — separate fix).
-
-Zero side effects.  Read-only diagnostic.
 """
 from __future__ import annotations
 
 import logging
 import sys
+from pathlib import Path
 
-from ...core.registry import ALL_DEVICES
+from ...core.registry import ALL_DEVICES, Wire
 
 log = logging.getLogger(__name__)
 
 
 _ZADIG_URL = "https://zadig.akeo.ie/"
 
+# Devices that need WinUSB (USB bulk / libusb access).
+# HID devices use Windows' built-in HID driver; SCSI devices use the
+# mass-storage driver — neither needs WinUSB.
+_WINUSB_WIRES: frozenset[Wire] = frozenset({Wire.BULK, Wire.BULK_ALI, Wire.LY})
+
+
+def _bundled_inf_path() -> Path | None:
+    """Locate the bundled ``trcc_winusb.inf`` next to the exe or in the
+    package's ``assets/drivers/`` folder."""
+    candidates: list[Path] = []
+    exe_dir = Path(sys.executable).parent
+    # PyInstaller onedir layout
+    candidates.append(exe_dir / "_internal" / "trcc" / "assets" / "drivers" / "trcc_winusb.inf")
+    # Portable folder layout (next to exe)
+    candidates.append(exe_dir / "drivers" / "trcc_winusb.inf")
+    # Source / dev layout
+    here = Path(__file__).resolve().parent
+    candidates.append(here.parent.parent.parent / "assets" / "drivers" / "trcc_winusb.inf")
+    for p in candidates:
+        if p.is_file():
+            log.debug("winusb inf: found at %s", p)
+            return p
+    log.debug("winusb inf: not found in any candidate location")
+    return None
+
+
+def install_winusb_silent() -> bool:
+    """Bind Windows' inbox ``winusb.sys`` to TRCC's bulk/LY LCD devices.
+
+    Uses the Win32 SetupAPI directly (``SetupCopyOEMInf`` +
+    ``UpdateDriverForPlugAndPlayDevices``) — the same mechanism Zadig
+    uses internally.  This works with our unsigned INF because
+    ``winusb.sys`` is Microsoft-signed and already in the driver store.
+
+    Requires Administrator (the packaged app has it via ``uac_admin``).
+    Returns ``True`` if all bindings succeeded.  Safe to call multiple
+    times — the binding is idempotent.
+    """
+    if not sys.platform.startswith("win"):
+        log.warning("winusb auto-install: Windows-only, skipping on %s", sys.platform)
+        return False
+    try:
+        from .winusb_bind import bind_winusb_silent
+        return bind_winusb_silent()
+    except Exception as e:
+        log.warning("winusb auto-install: bind failed: %s: %s", type(e).__name__, e)
+        return False
+
 
 def install(dry_run: bool = False) -> int:
-    """Diagnose WinUSB binding state and print actionable steps.
+    """Diagnose WinUSB binding state and auto-install if possible.
 
-    ``dry_run`` is accepted for parity with the Linux/BSD installers
-    but Windows setup is read-only by design (driver installation
-    requires UAC + a signed driver package — the user must run Zadig).
+    ``dry_run`` skips the silent pnputil install (parity with the
+    Linux/BSD installers' dry-run mode) — only diagnoses and prints
+    manual Zadig instructions for any invisible devices.
     """
     log.info("install: dry_run=%s", dry_run)
     if not _is_windows():
@@ -62,26 +113,44 @@ def install(dry_run: bool = False) -> int:
             print(f"          {vid:04x}:{pid:04x}  {label}")
 
     if not invisible:
-        print("\n  All connected TRCC devices have a working USB driver. 🍻")
+        print("\n  All connected TRCC devices have a working USB driver.")
         return 0
 
     print(f"\n  [!]   {len(invisible)} TRCC device(s) need WinUSB:")
     for vid, pid, label in invisible:
         print(f"          {vid:04x}:{pid:04x}  {label}")
 
+    # Try silent auto-install first (bundled INF + pnputil).
+    if not dry_run:
+        print("\n  Attempting automatic WinUSB installation...")
+        if install_winusb_silent():
+            print("  [OK]  WinUSB driver installed.  Re-enumerating devices...")
+            # Re-check after install — device may need a re-plug, but
+            # pnputil /install triggers immediate re-binding in most cases.
+            visible2, invisible2 = _classify_devices()
+            if not invisible2:
+                print("\n  All TRCC devices now visible to pyusb.")
+                return 0
+            print(f"\n  {len(invisible2)} device(s) still invisible after auto-install.")
+            print("  Try unplugging and replugging the device, then re-run TRCC.")
+            print("  If that doesn't help, use the manual Zadig steps below.")
+        else:
+            print("  [X]  Automatic installation failed.  Falling back to manual setup.")
+
+    # Manual fallback — Zadig instructions.
     print()
-    print("  To fix:")
+    print("  Manual setup with Zadig:")
     print(f"    1. Download Zadig from {_ZADIG_URL}")
     print("    2. Run as Administrator.")
-    print("    3. Options → List All Devices.")
+    print("    3. Options -> List All Devices.")
     print("    4. Pick each device above from the dropdown.")
     print('    5. Choose "WinUSB" as the driver and click "Replace Driver".')
-    print("    6. Re-run TRCC — the handshake will succeed.")
+    print("    6. Re-run TRCC -- the handshake will succeed.")
     print()
     print("  Notes:")
-    print("    • If your device is not in the dropdown, unplug + replug.")
-    print("    • libusbK / libusb-win32 also work, but WinUSB is preferred.")
-    print("    • Replacing a driver is reversible: Device Manager → Uninstall.")
+    print("    - If your device is not in the dropdown, unplug + replug.")
+    print("    - libusbK / libusb-win32 also work, but WinUSB is preferred.")
+    print("    - Replacing a driver is reversible: Device Manager -> Uninstall.")
     return 1
 
 
@@ -128,6 +197,11 @@ def _classify_devices() -> tuple[
     visible: list[tuple[int, int, str]] = []
     invisible: list[tuple[int, int, str]] = []
     for (vid, pid), product in sorted(ALL_DEVICES.items()):
+        # Only check devices that need WinUSB (USB bulk / libusb access).
+        # HID devices use Windows' inbox HID driver; SCSI devices use the
+        # mass-storage driver -- neither needs WinUSB binding.
+        if product.wire not in _WINUSB_WIRES:
+            continue
         label = f"{product.vendor} {product.product}"
         if any(usb_find(find_all=True, idVendor=vid, idProduct=pid) or []):
             visible.append((vid, pid, label))

@@ -448,7 +448,7 @@ def create_image_button(parent, x, y, w, h, normal_img, active_img,
             QPushButton {{
                 background: {Colors.DEVICE_NORMAL_BOTTOM}; color: #AAA;
                 border: 1px solid {Colors.DEVICE_NORMAL_BORDER};
-                border-radius: 3px; font-size: 10px;
+                border-radius: 3px; font-size: 20px; font-weight: bold;
             }}
             QPushButton:hover {{ background: {Colors.DEVICE_NORMAL_TOP}; color: white; }}
             QPushButton:checked {{
@@ -700,18 +700,27 @@ class BaseThemeBrowser(BasePanel):
         active = Assets.load_pixmap('theme_browser_filter_active.png', Sizes.FILTER_BTN_W, Sizes.FILTER_BTN_H)
         return normal, active
 
-    def _make_filter_button(self, x, y, w, h, normal_pix, active_pix, callback):
-        """Create a flat checkable filter button with icon states."""
-        btn = QPushButton(self)
+    def _make_filter_button(self, x, y, w, h, normal_pix, active_pix, callback,
+                            text=None):
+        """Create a checkable category button."""
+        btn = QPushButton(text or '', self)
         btn.setGeometry(x, y, w, h)
-        btn.setFlat(True)
         btn.setCheckable(True)
-        btn.setStyleSheet(Styles.FLAT_BUTTON)
-        if not normal_pix.isNull():
-            icon = QIcon(normal_pix)
-            icon.addPixmap(active_pix, QIcon.Mode.Normal, QIcon.State.On)
-            btn.setIcon(icon)
-            btn.setIconSize(btn.size())
+        if text:
+            btn.setStyleSheet(
+                "QPushButton { background: rgba(40,40,40,220); color: #F0F0F0; "
+                "border: 1px solid #777; border-radius: 4px; font-size: 14px; font-weight: bold; }"
+                "QPushButton:hover { background: rgba(90,90,90,235); color: white; }"
+                "QPushButton:checked { background: #806A32; border-color: #D2B05A; color: white; }"
+            )
+        else:
+            btn.setFlat(True)
+            btn.setStyleSheet(Styles.FLAT_BUTTON)
+            if not normal_pix.isNull():
+                icon = QIcon(normal_pix)
+                icon.addPixmap(active_pix, QIcon.Mode.Normal, QIcon.State.On)
+                btn.setIcon(icon)
+                btn.setIconSize(btn.size())
         btn.clicked.connect(callback)
         return btn
 

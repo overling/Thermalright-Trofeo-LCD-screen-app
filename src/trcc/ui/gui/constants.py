@@ -201,14 +201,17 @@ class Layout:
     DEVICE_INFO = (16, 712, 500, 44)
 
     # Bottom control buttons (within form_container)
-    ROTATION_COMBO = (39, 680, 108, 24)
-    BRIGHTNESS_BTN = (157, 680, 52, 24)
-    THEME_NAME_INPUT = (278, 684, 102, 16)
-    SAVE_BTN = (383, 680, 24, 24)
-    EXPORT_BTN = (412, 680, 40, 24)
-    IMPORT_BTN = (453, 680, 40, 24)
+    ROTATION_COMBO = (39, 696, 108, 24)
+    BRIGHTNESS_BTN = (157, 696, 52, 24)
+    THEME_NAME_INPUT = (278, 680, 102, 24)
+    SAVE_BTN = (383, 696, 24, 24)
+    EXPORT_BTN = (412, 696, 40, 24)
+    IMPORT_BTN = (453, 696, 40, 24)
 
     # Title bar buttons (within form_container)
+    HIDE_TO_TRAY_BTN = (1012, 24, 40, 40)
+    MINIMIZE_BTN = (1062, 24, 40, 40)
+    MAXIMIZE_BTN = (1112, 24, 40, 40)
     HELP_BTN = (1162, 24, 40, 40)
     CLOSE_BTN = (1212, 24, 40, 40)
 
@@ -220,23 +223,23 @@ class Layout:
     HINT_LABEL = (15, 55, 150, 40)
 
     # UCThemeLocal filter buttons
-    LOCAL_BTN_ALL = (21, 29, 63, 18)
-    LOCAL_BTN_DEFAULT = (121, 29, 63, 18)
-    LOCAL_BTN_USER = (221, 29, 63, 18)
+    LOCAL_BTN_ALL = (21, 22, 105, 18)
+    LOCAL_BTN_DEFAULT = (121, 22, 105, 18)
+    LOCAL_BTN_USER = (221, 22, 105, 18)
 
     # UCThemeWeb category buttons
     WEB_CATEGORIES = [
-        ('all',  21, 29, 63, 18),
-        ('a',   120, 29, 63, 18),   # Gallery
-        ('b',   221, 29, 63, 18),   # Tech
-        ('c',   322, 29, 63, 18),   # HUD
-        ('d',   421, 29, 63, 18),   # Light
-        ('e',   520, 29, 63, 18),   # Nature
-        ('y',   621, 29, 63, 18),   # Aesthetic
+        ('all',  21, 22, 105, 18),
+        ('a',   121, 22, 105, 18),   # Gallery
+        ('b',   221, 22, 105, 18),   # Tech
+        ('c',   321, 22, 105, 18),   # HUD
+        ('d',   421, 22, 105, 18),   # Light
+        ('e',   521, 22, 105, 18),   # Nature
+        ('y',   621, 22, 105, 18),   # Aesthetic
     ]
 
     # Scroll area (shared by all theme browsers)
-    THEME_SCROLL = (0, 50, 732, 602)
+    THEME_SCROLL = (0, 70, 732, 582)
 
     # Video controls
     PLAY_BTN = (10, 26, 34, 26)
@@ -251,7 +254,7 @@ class Layout:
     DATA_TABLE = (492, 376)
     MASK_PANEL = (10, 441)
     BG_PANEL = (371, 441)
-    SCREENCAST_PANEL = (10, 551)
+    SCREENCAST_PANEL = (10, 561)
     VIDEO_PANEL = (371, 551)
 
     # Color picker positions
@@ -291,6 +294,7 @@ class Layout:
     # UCAbout / Control Center panel
     ABOUT_CLOSE_BTN = (1212, 24, 40, 40)
     ABOUT_STARTUP = (297, 174, 14, 14)
+    ABOUT_MINIMIZE_STARTUP = (297, 204, 14, 14)
     ABOUT_CELSIUS = (297, 214, 14, 14)
     ABOUT_FAHRENHEIT = (387, 214, 14, 14)
     ABOUT_HDD = (297, 254, 14, 14)

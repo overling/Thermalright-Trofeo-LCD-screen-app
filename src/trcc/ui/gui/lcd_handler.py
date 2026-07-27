@@ -420,6 +420,10 @@ class LCDHandler(BaseHandler):
         self._pm.state.current_theme_path = (
             Path(result.theme_path) if result.theme_path else None
         )
+        # Restore per-theme brightness sidecar (if present).
+        self._restore_theme_brightness(
+            self._pm.state.current_theme_path
+        )
         if self._app.media.playback(self._device_key) is None:
             self.rebuild_preview()
 
@@ -479,6 +483,8 @@ class LCDHandler(BaseHandler):
         self._pm.state.current_theme_path = path if result.ok else None
         if result.ok:
             self._sync_preview_size()   # bezel matches portrait/landscape theme (#136)
+            # Restore per-theme brightness sidecar (if present).
+            self._restore_theme_brightness(path)
         if overlay_config:
             self._load_theme_overlay_config(path, persist=persist)
 
@@ -1011,6 +1017,50 @@ class LCDHandler(BaseHandler):
     def set_brightness(self, percent: int) -> None:
         self.log.info("set_brightness: %d%% -> %d%% device=%s",
                       self._pm.brightness_level, percent, self._device_key)
+        self._pm.brightness_level = percent
+        self._app.dispatch(SetBrightness(
+            key=self._device_key, percent=percent,
+        ))
+        # Persist brightness to the current theme's sidecar so switching
+        # back to this theme restores the brightness the user set for it.
+        self._save_theme_brightness(percent)
+
+    # ── Per-theme brightness sidecar ───────────────────────────────
+
+    @staticmethod
+    def _brightness_sidecar_path(theme_path: Path | None) -> Path | None:
+        """Return the ``.brightness`` sidecar path for a theme directory."""
+        if theme_path is None or not theme_path.exists():
+            return None
+        return theme_path / ".brightness"
+
+    def _save_theme_brightness(self, percent: int) -> None:
+        """Write the current brightness to the active theme's sidecar."""
+        path = self._brightness_sidecar_path(
+            self._pm.state.current_theme_path
+        )
+        if path is None:
+            return
+        try:
+            path.write_text(str(max(0, min(100, percent))))
+            self.log.debug("_save_theme_brightness: wrote %d%% to %s",
+                           percent, path)
+        except OSError as exc:
+            self.log.warning("_save_theme_brightness: %s", exc)
+
+    def _restore_theme_brightness(self, theme_path: Path | None) -> None:
+        """Read and apply the theme's saved brightness, if any."""
+        path = self._brightness_sidecar_path(theme_path)
+        if path is None or not path.exists():
+            return
+        try:
+            percent = int(path.read_text().strip())
+        except (OSError, ValueError) as exc:
+            self.log.warning("_restore_theme_brightness: %s", exc)
+            return
+        percent = max(0, min(100, percent))
+        self.log.info("_restore_theme_brightness: %d%% from %s",
+                      percent, path)
         self._pm.brightness_level = percent
         self._app.dispatch(SetBrightness(
             key=self._device_key, percent=percent,

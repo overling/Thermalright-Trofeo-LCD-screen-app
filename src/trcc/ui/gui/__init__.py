@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import logging
 import signal
+import sys
 from collections.abc import Callable
 from typing import Any
 
@@ -116,9 +117,106 @@ def run(platform: Any, *, decorated: bool = False,
     # The shared Qt-first composition, identical to the qtgui skin: set the Qt
     # env, build the windowed QApplication, apply the shared QApp settings, then
     # build the App via the canonical factory with a QtRenderer.  (build_qt_app)
-    from ..qapp import build_qt_app
-    app = build_qt_app(platform)
-    qapp = cast(QApplication, QApplication.instance())
+    #
+    # NOTE: we inline build_qt_app here rather than calling it because the
+    # legacy GUI's DPI/scale compensation MUST run between QApplication
+    # construction and App composition: it mutates the ``Layout`` / ``Sizes``
+    # constant classes (and the ``core.i18n`` font tuples) in place so every
+    # widget built afterwards picks up the scaled geometry.  Calling
+    # ``build_qt_app`` would build the App (and its widgets) before we had a
+    # chance to scale, producing the half-black / clipped / tiny-text window
+    # seen when this block was accidentally dropped.
+    from ..qapp import configure_qt_environment, configure_qapplication
+    configure_qt_environment()
+    qapp = QApplication.instance()
+    if not isinstance(qapp, QApplication):
+        qapp = QApplication(sys.argv)
+    # NOTE: configure_qapplication is called AFTER DPI scale is computed
+    # so the global font can be scaled to match.
+
+    # ── DPI / available-geometry scaling ────────────────────────────
+    # The process is declared PerMonitorV2 DPI-aware in the exe manifest
+    # (trcc.manifest), and QT_ENABLE_HIGHDPI_SCALING=0 is set in
+    # configure_qt_environment so Qt uses logical = physical coordinates
+    # (dpr=1.0).  The baked Layout/Sizes constants are designed for 96-DPI
+    # 1454x800; we manually scale them by (screen DPI / 96) so the window
+    # occupies the right physical area on high-DPI screens.  This matches
+    # the original working build's approach.
+    from .constants import Layout, Sizes
+    _screen = qapp.primaryScreen()
+    if _screen is not None:
+        _dpi = int(_screen.logicalDotsPerInch())
+        _dpr = _screen.devicePixelRatio()
+        _scale = _dpi / 96.0
+        _avail = _screen.availableGeometry()
+        _max_scale = min(_avail.width() / Sizes.WINDOW_W,
+                         _avail.height() / Sizes.WINDOW_H)
+        # Cap at 1.75x so the app fills most of a 4K display without
+        # overflowing (2.0x fills the entire screen which is too large).
+        _scale = min(_scale, _max_scale, 1.75)
+        if _scale < 1.0:
+            _scale = 1.0
+        # In Qt 6, HighDPI scaling is always enabled.  When dpr > 1.0,
+        # Qt scales widget coordinates by dpr automatically.  Our manual
+        # scaling would compound with Qt's, producing windows that are
+        # _scale * _dpr times too large (or clamped to a tiny size).
+        # To compensate, divide our manual scale by dpr so the net
+        # effect is just Qt's dpr scaling (which produces crisp text).
+        if _dpr > 1.0:
+            _scale = _scale / _dpr
+            if _scale < 1.0:
+                _scale = 1.0
+        log.info("run: screen=%s dpi=%d dpr=%.2f scale=%.2f max_scale=%.2f avail=%dx%d",
+                 _screen.name(), _dpi, _dpr,
+                 _scale, _max_scale,
+                 _avail.width(), _avail.height())
+        # Counts / name-lengths — scaling them would corrupt the grid.
+        _no_scale = frozenset({
+            'THUMB_NAME_MAX', 'THUMB_NAME_TRUNC',
+            'OVERLAY_COLS', 'OVERLAY_ROWS', 'GRID_COLS',
+        })
+        for _cls in (Layout, Sizes):
+            for _attr in list(vars(_cls).keys()):
+                if _attr in _no_scale:
+                    continue
+                _val = getattr(_cls, _attr)
+                if isinstance(_val, tuple) and all(
+                        isinstance(v, (int, float)) and not isinstance(v, bool)
+                        for v in _val):
+                    setattr(_cls, _attr, tuple(int(v * _scale) for v in _val))
+                elif isinstance(_val, (int, float)) and not isinstance(_val, bool):
+                    setattr(_cls, _attr, int(_val * _scale))
+        log.info("run: after scale Sizes.WINDOW_W=%d Sizes.WINDOW_H=%d",
+                 Sizes.WINDOW_W, Sizes.WINDOW_H)
+        # core.i18n font tuples are (x, y, w, h, pt) — scale geometry and
+        # point size together so localized labels stay proportional.
+        from ...core import i18n as _i18n_module
+        for _attr in list(vars(_i18n_module).keys()):
+            if not _attr.startswith('_'):
+                _val = getattr(_i18n_module, _attr)
+                if (isinstance(_val, tuple) and len(_val) == 5
+                        and all(isinstance(v, (int, float)) and not isinstance(v, bool)
+                                for v in _val)):
+                    x, y, w, h, pt = _val
+                    setattr(_i18n_module, _attr,
+                            (int(x * _scale), int(y * _scale),
+                             int(w * _scale), int(h * _scale),
+                             int(pt * _scale)))
+
+    # Now apply the scaled global font
+    configure_qapplication(qapp, font_scale=_scale)
+
+    # ── App composition (QtRenderer needs the QApplication above) ──
+    from ..._boot import trcc
+    from ...adapters.render.qt import QtRenderer
+    app = trcc(platform=platform, renderer=QtRenderer())
+
+    # ── "Minimize on startup" toggle — overrides start_hidden if the
+    # user enabled it in the GUI.  Reads from the persisted trcc.json
+    # so the boot-launched exe hides to the tray without showing a window.
+    if not start_hidden and getattr(app.settings, "start_minimized", False):
+        log.info("run: start_minimized=True in settings — hiding to tray")
+        start_hidden = True
 
     # ── Splash + background discover ────────────────────────────────
     from .splash import run_bootstrap_with_splash

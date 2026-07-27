@@ -27,6 +27,17 @@ from .constants import Colors, Layout, Sizes, Styles
 log = logging.getLogger(__name__)
 
 
+def _dpi() -> float:
+    """Return the DPI scale factor (base 1454px window width)."""
+    return Sizes.WINDOW_W / 1454.0 if Sizes.WINDOW_W > 1454 else 1.0
+
+
+def _s(*vals: int) -> tuple[int, ...]:
+    """Scale hardcoded geometry values by the DPI factor."""
+    d = _dpi()
+    return tuple(int(v * d) for v in vals)
+
+
 class DataTablePanel(QFrame):
     """Data selection table (matches UCXiTongXianShiTable 230x54).
 
@@ -58,7 +69,7 @@ class DataTablePanel(QFrame):
         # baked into the theme art).  NOT the global C/F choice (About panel).
         # Windows: (80, 15) 70x24
         self.unit_btn = QPushButton(self)
-        self.unit_btn.setGeometry(80, 15, 70, 24)
+        self.unit_btn.setGeometry(*_s(80, 15, 70, 24))
         self.unit_btn.setFlat(True)
         self.unit_btn.setStyleSheet(Styles.FLAT_BUTTON)
         self.unit_btn.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -72,7 +83,7 @@ class DataTablePanel(QFrame):
         # button1 — 12H/24H toggle (mode 1: time)
         # Windows: (88, 16) 54x22
         self.time_btn = QPushButton(self)
-        self.time_btn.setGeometry(88, 16, 54, 22)
+        self.time_btn.setGeometry(*_s(88, 16, 54, 22))
         self.time_btn.setFlat(True)
         self.time_btn.setStyleSheet(Styles.FLAT_BUTTON)
         self.time_btn.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -85,7 +96,7 @@ class DataTablePanel(QFrame):
         # button3 — date format cycle (mode 3: date)
         # Windows: (88, 16) 54x22
         self.date_btn = QPushButton(self)
-        self.date_btn.setGeometry(88, 16, 54, 22)
+        self.date_btn.setGeometry(*_s(88, 16, 54, 22))
         self.date_btn.setFlat(True)
         self.date_btn.setStyleSheet(Styles.FLAT_BUTTON)
         self.date_btn.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -99,7 +110,7 @@ class DataTablePanel(QFrame):
         # textBox1 — custom text input (mode 4: custom)
         # Windows: (15, 15) 200x22
         self.text_input = QLineEdit(self)
-        self.text_input.setGeometry(15, 15, 200, 22)
+        self.text_input.setGeometry(*_s(15, 15, 200, 22))
         self.text_input.setStyleSheet(Styles.INPUT_FIELD)
         self.text_input.setPlaceholderText("Text/Value")
         self.text_input.setToolTip("Custom text")
@@ -226,7 +237,7 @@ class DisplayModePanel(QFrame):
     }
 
     _TITLE_STYLE = (
-        "color: white; font-family: 'Microsoft YaHei'; font-size: 12pt;"
+        "color: white; font-family: 'Microsoft YaHei'; font-size: 10pt;"
         " background: transparent;"
     )
 
@@ -249,9 +260,9 @@ class DisplayModePanel(QFrame):
         self.toggle_btn.setToolTip(self._TOGGLE_TOOLTIP.get(self.mode_id, "Toggle"))
         self.toggle_btn.clicked.connect(self._on_toggle)
 
-        # Title label next to toggle
+        # Title label next to toggle (scale hardcoded geometry by DPI)
         self._title_lbl = QLabel(self.mode_id.title(), self)
-        self._title_lbl.setGeometry(44, 5, 140, 18)
+        self._title_lbl.setGeometry(*_s(44, 5, 240, 22))
         self._title_lbl.setStyleSheet(self._TITLE_STYLE)
 
         # Action buttons with icon images
@@ -320,60 +331,60 @@ class MaskPanel(DisplayModePanel):
     mask_position_changed = Signal(int, int)  # x, y
     mask_visibility_toggled = Signal(bool)
 
-    # X/Y entry positions (right side of panel)
+    # X/Y entry positions (right side of panel) — scaled at runtime
     _TEXTBOX_X = (259, 40, 38, 16)
     _TEXTBOX_Y = (259, 65, 38, 16)
 
-    # +/- button positions
+    # +/- button positions — scaled at runtime
     _BTN_ADD_X = (301, 42, 14, 14)
     _BTN_SUB_X = (319, 42, 14, 14)
     _BTN_ADD_Y = (301, 67, 14, 14)
     _BTN_SUB_Y = (319, 67, 14, 14)
 
-    # Eye toggle position
+    # Eye toggle position — scaled at runtime
     _BTN_EYE = (309, 6, 24, 16)
 
     _ENTRY_STYLE = (
         "background-color: black; color: #B4964F; border: none;"
-        " font-family: 'Microsoft YaHei'; font-size: 9pt;"
+        " font-family: 'Microsoft YaHei'; font-size: 8pt;"
     )
 
     def __init__(self, parent=None):
         super().__init__("mask", ["Load", "Upload"], parent)
-        # Reposition action buttons to align with left-side text labels
+        # Reposition action buttons to align with left-side text labels (DPI-scaled)
         if len(self._action_buttons) >= 1:
-            self._action_buttons[0].setGeometry(115, 30, 40, 40)  # Load/Masks
+            self._action_buttons[0].setGeometry(*_s(115, 30, 40, 40))  # Load/Masks
         if len(self._action_buttons) >= 2:
-            self._action_buttons[1].setGeometry(175, 30, 40, 40)  # Upload
+            self._action_buttons[1].setGeometry(*_s(175, 30, 40, 40))  # Upload
         self._updating = False
         self._mask_visible = True
         self._setup_mask_ui()
 
     _LABEL_STYLE = (
-        "color: white; font-family: 'Microsoft YaHei'; font-size: 9pt;"
+        "color: white; font-family: 'Microsoft YaHei'; font-size: 8pt;"
         " background: transparent;"
     )
 
     def _setup_mask_ui(self):
         """Add X/Y coordinate inputs and eye toggle on top of base panel."""
-        self._make_label("X", 247, 40)
-        self._make_label("Y", 247, 65)
+        self._make_label("X", *_s(247, 40))
+        self._make_label("Y", *_s(247, 65))
 
-        self.entry_x = self._make_entry(*self._TEXTBOX_X)
-        self.entry_y = self._make_entry(*self._TEXTBOX_Y)
+        self.entry_x = self._make_entry(*_s(*self._TEXTBOX_X))
+        self.entry_y = self._make_entry(*_s(*self._TEXTBOX_Y))
 
         self.entry_x.textChanged.connect(self._on_position_changed)
         self.entry_y.textChanged.connect(self._on_position_changed)
 
         # +/- buttons
-        self._make_pm_btn(*self._BTN_ADD_X, +1, self.entry_x)
-        self._make_pm_btn(*self._BTN_SUB_X, -1, self.entry_x)
-        self._make_pm_btn(*self._BTN_ADD_Y, +1, self.entry_y)
-        self._make_pm_btn(*self._BTN_SUB_Y, -1, self.entry_y)
+        self._make_pm_btn(*_s(*self._BTN_ADD_X), +1, self.entry_x)
+        self._make_pm_btn(*_s(*self._BTN_SUB_X), -1, self.entry_x)
+        self._make_pm_btn(*_s(*self._BTN_ADD_Y), +1, self.entry_y)
+        self._make_pm_btn(*_s(*self._BTN_SUB_Y), -1, self.entry_y)
 
         # Eye toggle button
         self.eye_btn = QPushButton(self)
-        self.eye_btn.setGeometry(*self._BTN_EYE)
+        self.eye_btn.setGeometry(*_s(*self._BTN_EYE))
         self.eye_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.eye_btn.setToolTip("Toggle mask visibility")
         self.eye_btn.clicked.connect(self._on_eye_toggle)
@@ -382,7 +393,7 @@ class MaskPanel(DisplayModePanel):
     def _make_label(self, text, x, y):
         """Create a small coordinate label."""
         lbl = QLabel(text, self)
-        lbl.setGeometry(x, y, 10, 16)
+        lbl.setGeometry(x, y, *_s(20, 22))
         lbl.setStyleSheet(self._LABEL_STYLE)
         return lbl
 
@@ -507,7 +518,7 @@ class ScreenCastPanel(DisplayModePanel):
 
     _ENTRY_STYLE = (
         "background-color: black; color: #B4964F; border: none;"
-        " font-family: 'Microsoft YaHei'; font-size: 9pt;"
+        " font-family: 'Microsoft YaHei'; font-size: 8pt;"
     )
 
     # Aspect ratios per resolution
@@ -530,39 +541,39 @@ class ScreenCastPanel(DisplayModePanel):
 
     def _setup_screencast_ui(self):
         """Add coordinate inputs on top of base DisplayModePanel."""
-        # X/Y/W/H entries
-        self.entry_x = self._make_entry(*self._TEXTBOX_X)
-        self.entry_y = self._make_entry(*self._TEXTBOX_Y)
-        self.entry_w = self._make_entry(*self._TEXTBOX_W)
-        self.entry_h = self._make_entry(*self._TEXTBOX_H)
+        # X/Y/W/H entries (DPI-scaled)
+        self.entry_x = self._make_entry(*_s(*self._TEXTBOX_X))
+        self.entry_y = self._make_entry(*_s(*self._TEXTBOX_Y))
+        self.entry_w = self._make_entry(*_s(*self._TEXTBOX_W))
+        self.entry_h = self._make_entry(*_s(*self._TEXTBOX_H))
 
         self.entry_x.textChanged.connect(lambda: self._on_coord_changed('x'))
         self.entry_y.textChanged.connect(lambda: self._on_coord_changed('y'))
         self.entry_w.textChanged.connect(lambda: self._on_coord_changed('w'))
         self.entry_h.textChanged.connect(lambda: self._on_coord_changed('h'))
 
-        # +/- buttons
-        self._make_pm_btn(*self._BTN_ADD_X, +1, self.entry_x)
-        self._make_pm_btn(*self._BTN_SUB_X, -1, self.entry_x)
-        self._make_pm_btn(*self._BTN_ADD_Y, +1, self.entry_y)
-        self._make_pm_btn(*self._BTN_SUB_Y, -1, self.entry_y)
-        self._make_pm_btn(*self._BTN_ADD_W, +1, self.entry_w)
-        self._make_pm_btn(*self._BTN_SUB_W, -1, self.entry_w)
-        self._make_pm_btn(*self._BTN_ADD_H, +1, self.entry_h)
-        self._make_pm_btn(*self._BTN_SUB_H, -1, self.entry_h)
+        # +/- buttons (DPI-scaled)
+        self._make_pm_btn(*_s(*self._BTN_ADD_X), +1, self.entry_x)
+        self._make_pm_btn(*_s(*self._BTN_SUB_X), -1, self.entry_x)
+        self._make_pm_btn(*_s(*self._BTN_ADD_Y), +1, self.entry_y)
+        self._make_pm_btn(*_s(*self._BTN_SUB_Y), -1, self.entry_y)
+        self._make_pm_btn(*_s(*self._BTN_ADD_W), +1, self.entry_w)
+        self._make_pm_btn(*_s(*self._BTN_SUB_W), -1, self.entry_w)
+        self._make_pm_btn(*_s(*self._BTN_ADD_H), +1, self.entry_h)
+        self._make_pm_btn(*_s(*self._BTN_SUB_H), -1, self.entry_h)
 
-        # Border toggle button
+        # Border toggle button (DPI-scaled)
         self.border_btn = QPushButton(self)
-        self.border_btn.setGeometry(*self._BTN_BORDER)
+        self.border_btn.setGeometry(*_s(*self._BTN_BORDER))
         self.border_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.border_btn.setToolTip("Toggle capture border")
         self.border_btn.clicked.connect(self._on_border_toggle)
         self._update_border_icon()
 
-        # Audio visualization toggle button
+        # Audio visualization toggle button (DPI-scaled)
         self._audio_on = False
         self.audio_btn = QPushButton(self)
-        self.audio_btn.setGeometry(*self._BTN_AUDIO)
+        self.audio_btn.setGeometry(*_s(*self._BTN_AUDIO))
         self.audio_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.audio_btn.setToolTip("Toggle mic audio visualization")
         self.audio_btn.clicked.connect(self._on_audio_toggle)

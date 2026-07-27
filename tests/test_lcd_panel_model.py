@@ -27,7 +27,7 @@ _DECOMPILE = Path("/tmp/trcc216_src/TRCC.decompiled.cs")
 # C#-canonical (landscape) widescreen panels — see lcd_panel._WIDESCREEN.
 _WIDE = [
     (800, 480), (854, 480), (960, 320), (960, 540),
-    (1280, 480), (1600, 720), (1920, 440), (1920, 462),
+    (1280, 480), (1600, 720), (1920, 400), (1920, 462),
 ]
 # Standard square / portrait / bar panels.
 _STD = [(240, 240), (320, 320), (480, 480), (240, 320), (640, 172), (2560, 720)]

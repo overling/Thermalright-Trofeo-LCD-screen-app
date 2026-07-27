@@ -13,7 +13,17 @@ from pathlib import Path
 
 # Early logging — catches import failures, DI errors, platform issues.
 # Must run before any trcc imports. All 4 OS's get a log file.
-_log_dir = Path.home() / '.trcc'
+# Portable builds (PyInstaller or .trcc/ marker next to exe) keep the log
+# next to the executable; non-portable dev runs use ~/.trcc/.
+_exe_dir = Path(sys.executable).parent
+if (
+    getattr(sys, "frozen", False)
+    or (_exe_dir / "trcc-user").exists()
+    or (_exe_dir / ".trcc").exists()
+):
+    _log_dir = _exe_dir / '.trcc'
+else:
+    _log_dir = Path.home() / '.trcc'
 _log_dir.mkdir(parents=True, exist_ok=True)
 _log_path = _log_dir / 'trcc.log'
 
@@ -97,6 +107,82 @@ if sys.platform == 'win32':
         log.debug("Added DLL search directory: %s", _app_dir)
     except (OSError, AttributeError):
         pass  # add_dll_directory requires Python 3.8+ and a valid dir
+
+    # Auto-install the bundled WinUSB INF so pyusb can talk to TRCC's
+    # bulk/LY LCD devices without the user manually running Zadig.
+    # Idempotent: pnputil skips already-installed INFs.  Runs only on
+    # Windows + only if the bundled INF is present + only at startup
+    # (so the driver is bound before any device enumeration).
+    # User consent: prompt on first run (when no consent flag exists).
+    # Subsequent runs skip the prompt and re-bind silently.
+    try:
+        import ctypes
+        from trcc.adapters.system._winusb import install_winusb_silent
+
+        _consent_flag = _app_dir / ".trcc" / "winusb_consent.txt"
+        # _consent_state: None = never asked, "granted" = yes, "declined" = no
+        _consent_state = None
+        if _consent_flag.exists():
+            try:
+                _consent_state = _consent_flag.read_text(encoding="utf-8").strip()
+            except Exception:
+                _consent_state = None
+
+        _proceed = False
+        if _consent_state == "granted":
+            _proceed = True
+        elif _consent_state == "declined":
+            _proceed = False
+        else:
+            # First run — check if any TRCC bulk/LY device is present
+            # before prompting (no point asking if nothing to bind).
+            _should_ask = False
+            try:
+                from trcc.adapters.system._winusb import _classify_devices
+                _visible, _invisible = _classify_devices()
+                _should_ask = bool(_visible or _invisible)
+            except Exception:
+                _should_ask = True  # If check fails, ask anyway
+
+            if _should_ask:
+                _MB_YESNO = 0x04
+                _MB_ICONQUESTION = 0x20
+                _MB_DEFBUTTON1 = 0x000
+                _IDYES = 6
+                _title = "TRCC - Driver Setup"
+                _msg = (
+                    "TRCC needs to bind the WinUSB driver to your LCD cooler(s) "
+                    "so it can communicate with them.\n\n"
+                    "This is a one-time setup and requires administrator "
+                    "privileges (which you already granted to launch TRCC).\n\n"
+                    "Click Yes to proceed, or No to skip (you can install "
+                    "the driver manually later via Zadig if needed)."
+                )
+                try:
+                    _rc = ctypes.windll.user32.MessageBoxW(
+                        0, _msg, _title,
+                        _MB_YESNO | _MB_ICONQUESTION | _MB_DEFBUTTON1)
+                except Exception:
+                    _rc = _IDYES  # If MessageBox fails, proceed silently
+                _proceed = (_rc == _IDYES)
+                # Record consent so we don't prompt again on every launch
+                try:
+                    _consent_flag.parent.mkdir(parents=True, exist_ok=True)
+                    _consent_flag.write_text(
+                        "granted\n" if _proceed else "declined\n",
+                        encoding="utf-8")
+                except Exception:
+                    pass
+                if not _proceed:
+                    log.info("WinUSB auto-install: user declined consent")
+
+        if _proceed:
+            if install_winusb_silent():
+                log.info("WinUSB: bundled INF installed successfully")
+            # Failure is non-fatal -- device recovery / system setup wizard
+            # will surface the manual Zadig instructions if needed.
+    except Exception as e:
+        log.debug("WinUSB auto-install skipped: %s: %s", type(e).__name__, e)
 
 try:
     # Auto-launch GUI when invoked as trcc-gui.exe (windowed PyInstaller build)

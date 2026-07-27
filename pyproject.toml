@@ -50,6 +50,7 @@ dependencies = [
     "prompt_toolkit>=3.0.0",
     "sounddevice>=0.4.6",
     "wmi>=1.5.1; sys_platform == 'win32'",
+    "pythonnet>=3.0.0; sys_platform == 'win32'",
     "certifi>=2023.7.22",
     # Linux hotplug: live device attach/detach + boot-time coldplug.  Without
     # it the udev monitor can't start, so a device plugged in after launch (or

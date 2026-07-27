@@ -133,8 +133,11 @@ class UCThemeWeb(DownloadableThemeBrowser):
         self.cat_buttons = {}
         self._btn_refs = [btn_normal, btn_active]
 
+        _s = Sizes.WINDOW_W / 1454.0
         for cat_id, x, y, w, h in Layout.WEB_CATEGORIES:
-            btn = self._make_filter_button(x, y, w, h, btn_normal, btn_active,
+            btn = self._make_filter_button(
+                int(x * _s), int(y * _s), int(w * _s), int(h * _s),
+                btn_normal, btn_active,
                 lambda checked, c=cat_id: self._set_category(c))
             self.cat_buttons[cat_id] = btn
 

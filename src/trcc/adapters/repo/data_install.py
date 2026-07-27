@@ -162,6 +162,23 @@ class HttpDataInstaller(DataInstaller):
                       archive_name, target_dir)
             return True
 
+        # Bundled-data fallback: if the data ships pre-extracted next to
+        # the exe (portable layout) or in PyInstaller's _internal/trcc/data/,
+        # seed the target from there before hitting GitHub.  Makes the app
+        # fully offline-capable when themes/videos/masks are bundled.
+        if _seed_from_bundle(target_dir, subpath):
+            log.info("install: %s seeded from bundled data at %s",
+                     archive_name, target_dir)
+            return True
+
+        # Local 7z archive fallback: if the .7z archive exists in the
+        # bundled data directory (shipped via PyInstaller datas), extract
+        # it locally instead of downloading from GitHub.
+        if _extract_local_archive(archive_name, target_dir, subpath, self._extractor):
+            log.info("install: %s extracted from local archive at %s",
+                     archive_name, target_dir)
+            return True
+
         url_subpath = f"{subpath}/" if subpath else ""
         url = f"{_GITHUB_BASE}{url_subpath}{archive_name}"
         archive_tmp = target_dir.parent / f"{archive_name}.tmp"
@@ -204,6 +221,88 @@ def _is_populated(directory: Path) -> bool:
         return directory.is_dir() and any(directory.iterdir())
     except OSError:
         return False
+
+
+def _seed_from_bundle(target_dir: Path, subpath: str) -> bool:
+    """Copy pre-extracted data from a bundled location into ``target_dir``.
+
+    Looks for the data in two places (in order):
+      1. ``<exe_dir>/_internal/trcc/data/`` — PyInstaller onedir bundle.
+      2. ``<exe_dir>/data/`` — portable folder layout next to the exe.
+
+    ``subpath`` is ``""`` for stock themes (matches ``theme{w}{h}/`` dirs
+    at the data root) or ``"web"`` for cloud previews + masks (matches
+    ``web/{w}{h}/`` and ``web/zt{w}{h}/`` under the data root).
+
+    Returns ``True`` if the target ends up populated.  Best-effort —
+    logs a warning on copy failure and returns ``False`` so the caller
+    falls back to the GitHub download path.
+    """
+    import sys
+    exe_dir = Path(sys.executable).parent
+    candidates = [
+        exe_dir / "_internal" / "trcc" / "data",
+        exe_dir / "data",
+    ]
+    # The target's leaf name (e.g. ``theme4621920`` or ``zt480480``)
+    # identifies the specific resolution folder to seed.
+    leaf = target_dir.name
+    for bundle_root in candidates:
+        if not bundle_root.is_dir():
+            continue
+        if subpath:
+            # Cloud previews/masks live under ``web/`` in the bundle.
+            src = bundle_root / subpath / leaf
+        else:
+            # Stock themes live at the bundle root directly.
+            src = bundle_root / leaf
+        if not src.is_dir() or not any(src.iterdir()):
+            continue
+        try:
+            target_dir.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copytree(str(src), str(target_dir), dirs_exist_ok=True)
+            log.info("seed: copied %s -> %s", src, target_dir)
+            return True
+        except OSError as e:
+            log.warning("seed: copy failed %s -> %s: %s: %s",
+                        src, target_dir, type(e).__name__, e)
+            return False
+    return False
+
+
+def _extract_local_archive(
+    archive_name: str,
+    target_dir: Path,
+    subpath: str,
+    extractor: _ArchiveExtractor,
+) -> bool:
+    """Extract a local .7z archive from bundled data into ``target_dir``.
+
+    Searches for ``archive_name`` (e.g. ``1920400.7z``) in the same
+    bundled data directories as ``_seed_from_bundle`` — PyInstaller's
+    ``_internal/trcc/data/`` and ``<exe>/data/``.  When the archive
+    exists, extracts it with the 7z CLI extractor.
+
+    Returns ``True`` if the target ends up populated.
+    """
+    import sys
+    exe_dir = Path(sys.executable).parent
+    candidates = [
+        exe_dir / "_internal" / "trcc" / "data",
+        exe_dir / "data",
+    ]
+    for bundle_root in candidates:
+        if not bundle_root.is_dir():
+            continue
+        archive_path = bundle_root / subpath / archive_name if subpath else bundle_root / archive_name
+        if not archive_path.is_file():
+            continue
+        log.info("extract_local: found %s in bundled data", archive_path)
+        ok = extractor.extract(archive_path, target_dir)
+        if ok:
+            _unwrap_nested_dir(target_dir)
+            return True
+    return False
 
 
 def _unwrap_nested_dir(target_dir: Path) -> None:
