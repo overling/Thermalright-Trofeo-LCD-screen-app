@@ -34,7 +34,10 @@ log = logging.getLogger(__name__)
 
 
 _LHM_NAMESPACE = "root\\LibreHardwareMonitor"
-_LHM_PROCESS_NAME = "LibreHardwareMonitor.exe"
+_LHM_PROCESS_NAMES = (
+    "LibreHardwareMonitor.Windows.Forms.exe",
+    "LibreHardwareMonitor.exe",
+)
 
 # Window between spawn and the WMI namespace becoming queryable.  On a
 # warm system LHM registers in ~2 s; first-run JIT can push it past
@@ -86,33 +89,133 @@ def _lhm_exe_path() -> Path | None:
     current working directory (dev mode).  Returns ``None`` when no
     bundled exe is present — graceful degradation rather than crash.
     """
-    candidates = [
-        Path(sys.executable).parent / "lhm" / _LHM_PROCESS_NAME,
-        Path.cwd() / "lhm" / _LHM_PROCESS_NAME,
-    ]
+    candidates: list[Path] = []
+    meipass = getattr(sys, "_MEIPASS", None)
+    exe_parent = Path(sys.executable).parent
+    cwd = Path.cwd()
+    for base in (meipass, exe_parent, cwd):
+        if base is None:
+            continue
+        for name in _LHM_PROCESS_NAMES:
+            candidates.append(Path(base) / "lhm" / name)
+            candidates.append(Path(base) / "lhm_nightly" / name)
+    # Also check standalone install location
+    for name in _LHM_PROCESS_NAMES:
+        candidates.append(Path(r"C:\trcc\lhm") / name)
     for c in candidates:
         if c.is_file():
             return c
     return None
 
 
+def _lhm_running_pids() -> list[int]:
+    """Return PIDs of any already-running ``LibreHardwareMonitor.exe``.
+
+    Used as a pre-spawn guard: if an LHM is already running (orphaned by a
+    force-killed previous TRCC session, user-installed, autostart, etc.) we
+    must NOT spawn another — each extra copy grabs the same WMI namespace
+    and they fight, while accumulating as zombie processes.
+    """
+    pids: list[int] = []
+    try:
+        import psutil
+    except ImportError:
+        return pids
+    for p in psutil.process_iter(['pid', 'name']):
+        try:
+            name = (p.info['name'] or '')
+            if name.lower() in (n.lower() for n in _LHM_PROCESS_NAMES):
+                pids.append(int(p.info['pid']))
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
+            continue
+    return pids
+
+
+def _is_elevated() -> bool:
+    """Return True if the current process has admin privileges."""
+    if sys.platform != "win32":
+        return False
+    try:
+        import ctypes
+        return bool(ctypes.windll.shell32.IsUserAnAdmin())
+    except Exception:
+        return False
+
+
 def _spawn_lhm() -> subprocess.Popen[bytes] | None:
     """Launch the bundled LHM with a hidden window.
 
-    Detached + no-console so it survives parent shutdown cleanly and
-    doesn't flash a window.  Returns ``None`` when the bundled exe
-    isn't shipped or ``Popen`` raises.
+    When the current process is NOT elevated, uses ShellExecuteW with
+    the "runas" verb to request UAC elevation — LHM needs admin to
+    read hardware sensors (MSR registers) and register its WMI
+    namespace.  When already elevated, spawns directly with
+    CREATE_NO_WINDOW + SW_HIDE.
+
+    Returns ``None`` when the bundled exe isn't shipped, ``Popen``
+    raises, OR when an LHM instance is already running (prevents the
+    multi-instance accumulation bug).
     """
+    # Pre-spawn guard: never launch a second LHM if one is already
+    # running.  A force-killed previous TRCC session orphans its LHM;
+    # without this check, every new TRCC launch spawns another, and
+    # they pile up (the user saw 6+ instances).
+    existing = _lhm_running_pids()
+    if existing:
+        log.info("LibreHardwareMonitor already running (pid=%s); not spawning another",
+                 existing[0])
+        if not _is_elevated():
+            log.warning(
+                "LibreHardwareMonitor is running but the current process "
+                "is not elevated. LHM needs admin privileges to register "
+                "its WMI namespace and read hardware sensors. "
+                "Restart TRCC as administrator, or close the existing "
+                "LHM and relaunch TRCC so it can spawn an elevated copy."
+            )
+        return None
+
     exe = _lhm_exe_path()
     if exe is None:
         log.debug("LHM exe not found in expected locations")
         return None
 
+    # When not elevated, use ShellExecuteW with "runas" to get UAC.
+    # subprocess.Popen can't elevate — only ShellExecute can trigger UAC.
+    if sys.platform == "win32" and not _is_elevated():
+        log.info(
+            "Spawning LibreHardwareMonitor with UAC elevation (runas) "
+            "— hardware sensors require admin privileges"
+        )
+        try:
+            import ctypes
+            # SW_HIDE = 0 so LHM's window doesn't flash
+            result = ctypes.windll.shell32.ShellExecuteW(
+                None, "runas", str(exe), None, str(exe.parent), 0,
+            )
+            # ShellExecuteW returns > 32 on success, <= 32 on failure.
+            if result <= 32:
+                log.warning(
+                    "ShellExecuteW failed to elevate LibreHardwareMonitor "
+                    "(error code %d). CPU temperature will be unavailable "
+                    "until LHM runs as administrator.", result,
+                )
+                return None
+            # Return a dummy Popen-like object — we can't track the PID
+            # of a ShellExecuteW-launched process, but the WMI namespace
+            # probe in _wait_for_wmi_namespace will detect readiness.
+            return subprocess.Popen(  # type: ignore[call-overload]
+                ["cmd", "/c", "exit"],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                creationflags=0x08000000,
+            )
+        except Exception as e:
+            log.warning("Failed to elevate LibreHardwareMonitor: %s", e)
+            return None
+
     creationflags = 0
     startupinfo = None
     if sys.platform == "win32":
         # CREATE_NO_WINDOW (0x08000000) — no console window
-        # DETACHED_PROCESS (0x00000008) — independent of TRCC's console
         creationflags = 0x08000000
         # SW_HIDE — belt-and-suspenders for the WinForms main window.
         startupinfo = subprocess.STARTUPINFO()  # pyright: ignore[reportAttributeAccessIssue]
@@ -234,10 +337,19 @@ class LhmSubprocess:
 
         self._owned_process = self._spawn()
         if self._owned_process is None:
-            log.warning(
-                "LibreHardwareMonitor not running and bundled exe not "
-                "found; LHM sensor source unavailable",
-            )
+            # Distinguish "already running" from "exe not found" — the
+            # _spawn_lhm function already logged the specific reason.
+            if _lhm_running_pids():
+                log.warning(
+                    "LibreHardwareMonitor is running but its WMI namespace "
+                    "is not registered (likely not elevated). CPU temp "
+                    "will be unavailable. Restart LHM as administrator."
+                )
+            else:
+                log.warning(
+                    "LibreHardwareMonitor not running and bundled exe not "
+                    "found; LHM sensor source unavailable",
+                )
             self._unavailable = True
             return None
         log.info("Spawned LibreHardwareMonitor (pid=%d)",

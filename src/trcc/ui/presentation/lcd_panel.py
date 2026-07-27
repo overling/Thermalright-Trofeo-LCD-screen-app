@@ -64,8 +64,8 @@ _PREVIEW_OFFSETS: dict[tuple[int, int], tuple[int, int, int, int, str]] = {
     (480, 1280): (160, 10, 180, 480, 'preview_180x480.png'),
     (1600, 720): (50, 160, 400, 180, 'preview_400x180.png'),
     (720, 1600): (160, 50, 180, 400, 'preview_180x400.png'),
-    (1920, 440): (10, 195, 480, 110, 'preview_480x110.png'),
-    (440, 1920): (195, 10, 110, 480, 'preview_110x480.png'),
+    (1920, 400): (10, 200, 480, 100, 'preview_480x110.png'),
+    (400, 1920): (200, 10, 100, 480, 'preview_110x480.png'),
     (1920, 462): (10, 192, 480, 116, 'preview_480x116.png'),
     (462, 1920): (192, 10, 116, 480, 'preview_116x480.png'),
 }
@@ -77,7 +77,7 @@ _DEFAULT_OFFSET: tuple[int, int, int, int, str] = (90, 90, 320, 320, 'preview_32
 # Source of truth: dev/tools/audit_csharp._lcd_panel_composition (FormCZTVInit).
 _WIDESCREEN: frozenset[tuple[int, int]] = frozenset({
     (800, 480), (854, 480), (960, 320), (960, 540),
-    (1280, 480), (1600, 720), (1920, 440), (1920, 462),
+    (1280, 480), (1600, 720), (1920, 400), (1920, 462),
 })
 
 

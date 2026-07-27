@@ -26,8 +26,10 @@ from PySide6.QtWidgets import (
     QLabel,
     QLineEdit,
     QMainWindow,
+    QMenu,
     QPushButton,
     QStackedWidget,
+    QSystemTrayIcon,
     QWidget,
 )
 
@@ -36,6 +38,7 @@ from ...core.commands import (
     DeleteTheme,
     EnableOverlay,
     ListGpus,
+    PlayVideo,
     SetBackground,
     SetGpuDevice,
     SetHddEnabled,
@@ -49,7 +52,6 @@ from ...core.commands import (
 )
 from ...core.models import HardwareMetrics, Kind
 from ..presentation import presentation_for
-from ..qt_tray import TrayController
 from ._ui_state import UiStateStore
 from .assets import Assets
 from .base import create_image_button, set_background_pixmap
@@ -358,7 +360,7 @@ class TRCCApp(QMainWindow):
         return cls._instance
 
     def is_app_visible(self) -> bool:
-        return self.isVisible() and not self._tray.minimized_to_taskbar
+        return self.isVisible() and not self._minimized_to_taskbar
 
     def __init__(
         self,
@@ -391,18 +393,21 @@ class TRCCApp(QMainWindow):
         # settings.active_gpu) — no GUI-local hook needed.
         self._decorated = decorated
         self._drag_pos: Any = None
-        # System tray (shared TrayController): a window-close hides/minimises to
-        # the tray and keeps the LCD running; Exit quits.  Constructed here so
-        # ``is_app_visible`` can read its state; ``install()`` runs below.
-        _tray_icon = Path(__file__).resolve().parents[2] / 'assets' / 'icons' / 'trcc.png'
-        self._tray = TrayController(
-            self, minimize_on_close=self._minimize_on_close,
-            icon=QIcon(str(_tray_icon)) if _tray_icon.exists() else QIcon(),
-        )
+        self._force_quit = False
+        self._minimized_to_taskbar = False
         self._data_dir = app.platform.paths().user_content_dir()
 
+        # Base size after DPI scaling (captured before any resize scaling)
+        self._base_w = Sizes.WINDOW_W
+        self._base_h = Sizes.WINDOW_H
+        self._widget_geoms: dict[QWidget, tuple[int, int, int, int]] = {}
+        self._font_pts: dict[QWidget, float] = {}
+        self._scale_factor = 1.0
+        self._is_maximized = False
+
         self.setWindowTitle("TRCC-Linux - Thermalright LCD Control Center")
-        self.setFixedSize(Sizes.WINDOW_W, Sizes.WINDOW_H)
+        self.setMinimumSize(Sizes.WINDOW_W, Sizes.WINDOW_H)
+        self.resize(Sizes.WINDOW_W, Sizes.WINDOW_H)
         if not decorated:
             self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.Window)
 
@@ -421,6 +426,11 @@ class TRCCApp(QMainWindow):
         # Build UI
         self._apply_dark_theme()
         self._setup_ui()
+
+        # Scale hardcoded CSS font-size: Npx values once after UI setup
+        central = self.centralWidget()
+        if central is not None:
+            self._scale_stylesheet_fonts(central)
 
         # Screencast handler
         self._screencast = ScreencastHandler(self, self._on_screencast_frame)
@@ -473,8 +483,8 @@ class TRCCApp(QMainWindow):
         self.uc_about._autostart = autostart_state
         self.uc_about.startup_btn.setChecked(autostart_state)
 
-        # System tray — controller built above; show it now.
-        self._tray.install()
+        # System tray
+        self._setup_systray()
 
         # Raise-existing-window (second launch) — see ``raise_requested``.
         # QueuedConnection: the emit comes from SingleInstance's accept thread,
@@ -492,9 +502,9 @@ class TRCCApp(QMainWindow):
         """
         log.info(
             "_on_raise_requested: visible=%s minimized=%s tray=%s",
-            self.isVisible(), self.isMinimized(), self._tray.minimized_to_taskbar,
+            self.isVisible(), self.isMinimized(), self._minimized_to_taskbar,
         )
-        self._tray.clear_minimized()
+        self._minimized_to_taskbar = False
         self.showNormal()
         self.raise_()
         self.activateWindow()
@@ -516,7 +526,12 @@ class TRCCApp(QMainWindow):
             return
         self._last_error_text = text
         log.info("_on_bus_error: [%s] %s", event.kind, event.message)
-        self._tray.notify("TRCC — device", text)
+        tray = getattr(self, "_tray", None)
+        if tray is not None and QSystemTrayIcon.isSystemTrayAvailable():
+            tray.showMessage(
+                "TRCC — device", text,
+                QSystemTrayIcon.MessageIcon.Warning, 8000,
+            )
 
     def _on_bus_device_connected(self, event: Any) -> None:
         """One device just attached/handshaked (hotplug after startup).
@@ -809,7 +824,6 @@ class TRCCApp(QMainWindow):
             'image_cut': self.uc_image_cut,
             'video_cut': self.uc_video_cut,
             'rotation_combo': self.rotation_combo,
-            'device_info_label': self.device_info_label,
         }
         log.info("LCD handler added: %s", key)
         return LCDHandler(
@@ -833,10 +847,6 @@ class TRCCApp(QMainWindow):
             remaining = list(self._handlers)
             if remaining:
                 self._activate_device(remaining[0])
-            else:
-                # No device left — clear the fingerprint line so it doesn't
-                # show a removed device's bytes.
-                self.device_info_label.clear()
 
         self._refresh_sidebar()
 
@@ -940,6 +950,52 @@ class TRCCApp(QMainWindow):
         self.setPalette(palette)
 
     # ── System tray ─────────────────────────────────────────────────
+
+    def _setup_systray(self) -> None:
+        # __file__ = src/trcc/ui/gui/trcc_app.py  →  parents[2] = src/trcc/
+        icon_path = Path(__file__).resolve().parents[2] / 'assets' / 'icons' / 'trcc.png'
+        icon = QIcon(str(icon_path)) if icon_path.exists() else QIcon()
+        self.setWindowIcon(icon)
+
+        self._tray = QSystemTrayIcon(icon, self)
+        self._tray.setToolTip("TRCC Linux")
+
+        menu = QMenu()
+        if (show_action := menu.addAction("Show/Hide")):
+            show_action.triggered.connect(self._toggle_visibility)
+        menu.addSeparator()
+        if (exit_action := menu.addAction("Exit")):
+            exit_action.triggered.connect(self._quit_app)
+        self._tray.setContextMenu(menu)
+        self._tray.activated.connect(self._on_tray_activated)
+        self._tray.show()
+
+    def _on_tray_activated(self, reason: Any) -> None:
+        log.info("_on_tray_activated: reason=%s", reason)
+        if reason == QSystemTrayIcon.ActivationReason.Trigger:
+            self._toggle_visibility()
+
+    def _toggle_visibility(self) -> None:
+        if self.isVisible():
+            self.hide()
+        else:
+            self._minimized_to_taskbar = False
+            self.show()
+            self.activateWindow()
+            self.raise_()
+
+    def _hide_to_tray(self) -> None:
+        """Hide the window to the system tray (hidden icon area)."""
+        self.hide()
+        if hasattr(self, '_tray') and self._tray.isVisible():
+            self._tray.showMessage(
+                "TRCC", "Application hidden to system tray. "
+                "Click the tray icon to restore.",
+                QSystemTrayIcon.MessageIcon.Information, 3000)
+
+    def _quit_app(self) -> None:
+        self._force_quit = True
+        self.close()
 
     # ── UI Setup ────────────────────────────────────────────────────
 
@@ -1148,19 +1204,6 @@ class TRCCApp(QMainWindow):
         self.rotation_combo.setToolTip("LCD rotation")
         self.rotation_combo.currentIndexChanged.connect(self._on_rotation_change)
 
-        # Device fingerprint line — name · vid:pid · FBL/PM/SUB, selectable so
-        # it can be copied straight into a bug report / porting note.
-        self.device_info_label = QLabel(self.form_container)
-        self.device_info_label.setGeometry(*Layout.DEVICE_INFO)
-        self.device_info_label.setTextInteractionFlags(
-            Qt.TextInteractionFlag.TextSelectableByMouse
-            | Qt.TextInteractionFlag.TextSelectableByKeyboard
-        )
-        self.device_info_label.setWordWrap(True)
-        self.device_info_label.setStyleSheet(
-            "QLabel { color: #9AA0A6; font-family: monospace; font-size: 10px; }")
-        self.device_info_label.setToolTip("Device fingerprint (selectable)")
-
         from ...core.registry import BRIGHTNESS_STEPS
         self._ldd_pixmaps: dict = {}
         for i, percent in enumerate(BRIGHTNESS_STEPS, start=1):
@@ -1214,7 +1257,238 @@ class TRCCApp(QMainWindow):
             btn.setStyleSheet(Styles.TEXT_BUTTON)
         return btn
 
+    def _scale_stylesheet_fonts(self, central: QWidget) -> None:
+        """Scale hardcoded font-size values in widget stylesheets by DPI scale.
+
+        Handles both ``px`` and ``pt`` units.  Skips i18n labels (already
+        scaled via the i18n module's tuple scaling) to avoid double-scaling.
+        """
+        import re
+        from .constants import Sizes
+        dpi_scale = Sizes.WINDOW_W / 1454.0 if Sizes.WINDOW_W > 1454 else 1.0
+        if dpi_scale <= 1.01:
+            return
+        px_pattern = re.compile(r'font-size:\s*(\d+(?:\.\d+)?)px')
+        pt_pattern = re.compile(r'font-size:\s*(\d+(?:\.\d+)?)pt')
+        # Build a set of i18n label widgets to skip (already DPI-scaled)
+        i18n_widgets = {id(lbl) for lbl, _ in getattr(self, '_i18n_labels', [])}
+        all_widgets = central.findChildren(QWidget)
+        all_widgets.append(central)
+        scaled = 0
+        for w in all_widgets:
+            if id(w) in i18n_widgets:
+                continue
+            ss = w.styleSheet()
+            if not ss or 'font-size' not in ss:
+                continue
+            new_ss = px_pattern.sub(
+                lambda m: f'font-size: {int(float(m.group(1)) * dpi_scale)}px', ss)
+            new_ss = pt_pattern.sub(
+                lambda m: f'font-size: {max(1, int(float(m.group(1)) * dpi_scale))}pt', new_ss)
+            if new_ss != ss:
+                w.setStyleSheet(new_ss)
+                scaled += 1
+        log.info("_scale_stylesheet_fonts: dpi_scale=%.2f scaled %d widgets", dpi_scale, scaled)
+
+    def _run_layout_diagnostic(self) -> None:
+        """Temporary: check for overlapping widgets and clipped text."""
+        try:
+            from PySide6.QtGui import QFontMetrics
+            central = self.centralWidget()
+            if central is None:
+                return
+
+            lines: list[str] = []
+            lines.append(f"Window size: {self.width()}x{self.height()}")
+            lines.append(f"Base size: {self._base_w}x{self._base_h}")
+            lines.append(f"Scale factor: {self._scale_factor}")
+            from .constants import Sizes, Layout
+            lines.append(f"Sizes.WINDOW_W={Sizes.WINDOW_W} WINDOW_H={Sizes.WINDOW_H}")
+            lines.append(f"Sizes.DEVICE_BTN_H={Sizes.DEVICE_BTN_H} SPACING={Sizes.DEVICE_BTN_SPACING} W={Sizes.DEVICE_BTN_W}")
+            lines.append(f"Sizes.THUMB_W={Sizes.THUMB_W} THUMB_H={Sizes.THUMB_H} THUMB_IMAGE={Sizes.THUMB_IMAGE}")
+            lines.append(f"Sizes.FILTER_BTN_W={Sizes.FILTER_BTN_W} FILTER_BTN_H={Sizes.FILTER_BTN_H}")
+            lines.append(f"Layout.LOCAL_BTN_ALL={Layout.LOCAL_BTN_ALL}")
+            lines.append(f"Layout.DEVICE_AREA={Layout.DEVICE_AREA}")
+            lines.append("")
+
+            all_widgets = central.findChildren(QWidget)
+            all_widgets.append(central)
+
+            # Font size distribution
+            lines.append("=== Font sizes ===")
+            font_map: dict[float, list[str]] = {}
+            for w in all_widgets:
+                f = w.font()
+                pt = f.pointSizeF()
+                cls = type(w).__name__
+                font_map.setdefault(pt, []).append(cls)
+            for pt in sorted(font_map.keys()):
+                classes = sorted(set(font_map[pt]))
+                lines.append(f"  {pt}pt: {', '.join(classes)} ({len(font_map[pt])} widgets)")
+            lines.append("")
+
+            # Build a set of ancestor pairs to skip (direct parent-child only)
+            # We still check ancestor-descendant overlaps beyond direct parent
+            direct_parent_child: set[tuple[int, int]] = set()
+            for w in all_widgets:
+                p = w.parentWidget()
+                if p is not None:
+                    direct_parent_child.add((id(p), id(w)))
+
+            # Convert to global coordinates for overlap detection
+            def _global_rect(w):
+                g = w.geometry()
+                tl = w.mapToGlobal(g.topLeft())
+                return (tl.x(), tl.y(), g.width(), g.height())
+
+            visible_widgets = [w for w in all_widgets if w.isVisible()]
+
+            # Check ALL pairs for overlap (skip only direct parent-child)
+            lines.append("=== Overlapping widgets (all pairs) ===")
+            overlap_count = 0
+            for i, a in enumerate(visible_widgets):
+                ar = _global_rect(a)
+                for b in visible_widgets[i+1:]:
+                    # Skip only direct parent-child
+                    if (id(a), id(b)) in direct_parent_child or (id(b), id(a)) in direct_parent_child:
+                        continue
+                    br = _global_rect(b)
+                    if (ar[0] < br[0] + br[2] and ar[0] + ar[2] > br[0] and
+                        ar[1] < br[1] + br[3] and ar[1] + ar[3] > br[1]):
+                        ow = min(ar[0]+ar[2], br[0]+br[2]) - max(ar[0], br[0])
+                        oh = min(ar[1]+ar[3], br[1]+br[3]) - max(ar[1], br[1])
+                        if ow > 5 and oh > 5:
+                            na = a.objectName() or type(a).__name__
+                            nb = b.objectName() or type(b).__name__
+                            # Get text if any
+                            ta = getattr(a, 'text', None)
+                            ta = ta() if callable(ta) else None
+                            tb = getattr(b, 'text', None)
+                            tb = tb() if callable(tb) else None
+                            ta = f" text='{ta[:20]}'" if ta else ""
+                            tb = f" text='{tb[:20]}'" if tb else ""
+                            lines.append(f"  {na}({ar[0]},{ar[1]},{ar[2]}x{ar[3]}){ta}")
+                            lines.append(f"    OVERLAPS {nb}({br[0]},{br[1]},{br[2]}x{br[3]}){tb}")
+                            lines.append(f"    overlap={ow}x{oh}")
+                            overlap_count += 1
+            if overlap_count == 0:
+                lines.append("  None found")
+            lines.append("")
+
+            # Check for widgets extending beyond parent bounds
+            lines.append("=== Widgets beyond parent bounds ===")
+            beyond_count = 0
+            for w in visible_widgets:
+                p = w.parentWidget()
+                if p is None or not p.isVisible():
+                    continue
+                wg = w.geometry()
+                pg = p.geometry()
+                # Check if widget extends beyond parent
+                if wg.x() < 0 or wg.y() < 0 or \
+                   wg.x() + wg.width() > pg.width() + 2 or \
+                   wg.y() + wg.height() > pg.height() + 2:
+                    na = w.objectName() or type(w).__name__
+                    ta = getattr(w, 'text', None)
+                    ta = f" text='{ta()[:20]}'" if ta and callable(ta) and ta() else ""
+                    lines.append(f"  {na}({wg.x()},{wg.y()},{wg.width()}x{wg.height()}){ta}")
+                    lines.append(f"    parent={p.objectName() or type(p).__name__}({pg.width()}x{pg.height()})")
+                    beyond_count += 1
+            if beyond_count == 0:
+                lines.append("  None found")
+            lines.append("")
+
+            # Check for clipped text (text wider than widget OR any ancestor)
+            lines.append("=== Clipped text ===")
+            clipped = 0
+            for w in visible_widgets:
+                text_fn = getattr(w, 'text', None)
+                if not text_fn or not callable(text_fn):
+                    continue
+                t = text_fn()
+                if not t or len(t) < 2:
+                    continue
+                font = w.font()
+                fm = QFontMetrics(font)
+                text_w = fm.horizontalAdvance(t)
+                ww = w.width()
+                # Walk up ALL ancestors and find the most constraining width
+                min_ancestor_w = 999999
+                clip_ancestor = None
+                p = w.parentWidget()
+                while p is not None:
+                    pw = p.width()
+                    # Check if widget x-offset + width exceeds ancestor
+                    wg = w.geometry()
+                    if wg.x() + ww > pw + 2:
+                        effective_w = pw - wg.x()
+                        if effective_w < min_ancestor_w:
+                            min_ancestor_w = effective_w
+                            clip_ancestor = type(p).__name__
+                    p = p.parentWidget()
+                max_w = min(ww, min_ancestor_w)
+                if text_w > max_w + 2:
+                    anc_info = f" ancestor={clip_ancestor}" if clip_ancestor else ""
+                    lines.append(f"  {type(w).__name__} '{t[:40]}' widget={ww}x{w.height()}{anc_info} needs={text_w} font={font.pointSizeF()}pt")
+                    clipped += 1
+            if clipped == 0:
+                lines.append("  None found")
+            lines.append("")
+
+            # Dump ALL text-bearing widgets for manual inspection
+            lines.append("=== All text widgets ===")
+            for w in visible_widgets:
+                text_fn = getattr(w, 'text', None)
+                if not text_fn or not callable(text_fn):
+                    continue
+                t = text_fn()
+                if not t:
+                    continue
+                font = w.font()
+                fm = QFontMetrics(font)
+                text_w = fm.horizontalAdvance(t)
+                wg = w.geometry()
+                p = w.parentWidget()
+                pn = p.objectName() or type(p).__name__ if p else "none"
+                pw = p.width() if p else 0
+                clip = " *** CLIPPED" if text_w > wg.width() + 2 else ""
+                lines.append(f"  {type(w).__name__} '{t[:50]}' pos=({wg.x()},{wg.y()}) size={wg.width()}x{wg.height()} text_w={text_w} font={font.pointSizeF()}pt parent={pn}({pw}){clip}")
+            lines.append("")
+
+            lines.append(f"Summary: {clipped} clipped, {overlap_count} overlaps, {beyond_count} beyond-parent, {len(all_widgets)} widgets")
+
+            import tempfile, os
+            _diag_path = os.path.join(tempfile.gettempdir(), "trcc_layout_diagnostic.txt")
+            with open(_diag_path, "w", encoding="utf-8") as f:
+                f.write("\n".join(lines))
+        except Exception as e:
+            import traceback, tempfile, os
+            try:
+                _diag_path = os.path.join(tempfile.gettempdir(), "trcc_layout_diagnostic.txt")
+                with open(_diag_path, "w") as f:
+                    f.write(f"Diagnostic failed: {e}\n{traceback.format_exc()}\n")
+            except Exception:
+                pass
+
     def _create_title_buttons(self) -> None:
+        hide_tray_btn = create_image_button(
+            self.form_container, *Layout.HIDE_TO_TRAY_BTN,
+            None, None, fallback_text="\u2193")
+        hide_tray_btn.setToolTip("Hide to system tray")
+        hide_tray_btn.clicked.connect(self._hide_to_tray)
+
+        minimize_btn = create_image_button(
+            self.form_container, *Layout.MINIMIZE_BTN,
+            None, None, fallback_text="\u2013")
+        minimize_btn.setToolTip("Minimize")
+        minimize_btn.clicked.connect(self.showMinimized)
+
+        maximize_btn = create_image_button(
+            self.form_container, *Layout.MAXIMIZE_BTN,
+            None, None, fallback_text="\u25a1")
+        maximize_btn.setToolTip("Maximize")
+        maximize_btn.clicked.connect(self._toggle_maximize)
+
         help_btn = create_image_button(
             self.form_container, *Layout.HELP_BTN, Assets.BTN_HELP, None, fallback_text="?")
         help_btn.setToolTip("Help")
@@ -1311,9 +1585,9 @@ class TRCCApp(QMainWindow):
             x, y, w, h, pt = pos
             _lbl(self.form_container, tr(key, lang), x, y, w, h, pt, key)
 
-        grid = self.uc_theme_setting.data_table
+        overlay = self.uc_theme_setting.overlay_grid
         x, y, w, h, pt = OVERLAY_GRID_HINT_POS
-        _lbl(grid, tr('Double-click to delete card', lang), x, y, w, h, pt,
+        _lbl(overlay, tr('Double-click to delete card', lang), x, y, w, h, pt,
              'Double-click to delete card')
 
         rpanel = self.uc_theme_setting.right_stack
@@ -1351,26 +1625,27 @@ class TRCCApp(QMainWindow):
         for key, pos in [('Load Image', BACKGROUND_LOAD_IMG_POS),
                          ('Load Video', BACKGROUND_LOAD_VIDEO_POS)]:
             x, y, w, h, pt = pos
-            _lbl(bp, tr(key, lang), x, y, w, h, pt, key)
+            _lbl(bp, tr(key, lang), x, y, w, h, pt, key, center=True)
 
         vp = s.video_panel
         x, y, w, h, pt = MEDIA_PLAYER_LOAD_POS
-        _lbl(vp, tr('Load Video', lang), x, y, w, h, pt, 'Load Video')
-
-        x, y, w, h, pt = LOCAL_THEME_POS
-        _lbl(self.uc_theme_local, tr('Local Theme', lang), x, y, w, h, pt, 'Local Theme')
+        _lbl(vp, tr('Load Video', lang), x, y, w, h, pt, 'Load Video', center=True)
 
         x, y, w, h, pt = ONLINE_THEME_POS
         _lbl(self.uc_theme_mask, tr('Cloud Masks', lang), x, y, w, h, pt, 'Cloud Masks')
 
-        x, y, w, h, pt = GALLERY_TITLE_POS
-        _lbl(self.uc_theme_web, tr('Gallery', lang), x, y, w, h, pt, 'Gallery')
-        tab_x_positions = [45, 135, 235, 335, 430, 525, 635]
-        tab_keys: list[str | None] = ['All', 'Tech', None, 'Light', 'Nature', 'Aesthetic', 'Other']
+        _dpi_scale = Sizes.WINDOW_W / 1454.0
+        # Match WEB_CATEGORIES button x positions so labels overlay buttons exactly
+        tab_x_positions = [int(v * _dpi_scale) for v in [21, 121, 221, 321, 421, 521, 621]]
+        tab_keys: list[str | None] = ['All', 'Gallery', 'Tech', 'HUD', 'Light', 'Nature', 'Aesthetic']
+        _tab_w = int(105 * _dpi_scale)
+        _tab_y = int(22 * _dpi_scale)
+        _tab_h = int(18 * _dpi_scale)
+        _tab_font = int(GALLERY_TAB_FONT * _dpi_scale)
         for tx, key in zip(tab_x_positions, tab_keys, strict=False):
             text = 'HUD' if key is None else tr(key, lang)
             lbl = _lbl(self.uc_theme_web, text,
-                       tx, GALLERY_TAB_Y, 90, GALLERY_TAB_H, GALLERY_TAB_FONT, key)
+                       tx, _tab_y, _tab_w, _tab_h, _tab_font, key)
             lbl.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
 
         about_items: list[tuple[str, tuple[int, ...]]] = [
@@ -1512,6 +1787,7 @@ class TRCCApp(QMainWindow):
         self.uc_theme_local.theme_selected.connect(self._on_local_theme_clicked)
         self.uc_theme_local.delete_requested.connect(self._on_delete_theme)
         self.uc_theme_local.delegate.connect(self._on_local_delegate)
+        self.uc_theme_local.export_all_requested.connect(self._on_export_all_themes)
         self.uc_theme_web.theme_selected.connect(self._on_cloud_theme_clicked)
         self.uc_theme_web.download_started.connect(self._on_theme_download_started)
         self.uc_theme_web.download_finished.connect(self._on_theme_download_finished)
@@ -1548,6 +1824,8 @@ class TRCCApp(QMainWindow):
         self.uc_video_cut.video_cut_done.connect(self._on_video_cut_done)
 
         self.uc_activity_sidebar.sensor_clicked.connect(self._on_sensor_element_add)
+        self.uc_activity_sidebar.closed.connect(
+            lambda: self.uc_activity_sidebar.setVisible(False))
 
         self.uc_about.close_requested.connect(self._on_about_close_requested)
         self.uc_about.language_changed.connect(self._set_language)
@@ -1898,16 +2176,13 @@ class TRCCApp(QMainWindow):
         if self._screencast.active:
             self._app.dispatch(StopScreencast(key=h.device_key))
         h.is_background_active = False
-        # ``SetBackground`` persists the pick as the device's background
-        # override THEN delegates to ``PlayVideo`` (decode, populate
-        # MediaService playback, publish ``VideoStarted`` so the handler's
-        # timer observer takes over) — without the persist step a later
-        # ``SaveTheme`` has no override to bake in and the saved theme
-        # reloads without this video.  Overlay-off is part of "play
-        # arbitrary video" UX — disable through the Command bus so
-        # persistence + render chain stays in sync.
+        # ``PlayVideo`` owns the full pipeline: decode, populate
+        # MediaService playback, publish ``VideoStarted`` so the
+        # handler's timer observer takes over.  Overlay-off is part of
+        # "play arbitrary video" UX — disable through the Command bus
+        # so persistence + render chain stays in sync.
         self._app.dispatch(EnableOverlay(key=h.device_key, enabled=False))
-        result = self._app.dispatch(SetBackground(
+        result = self._app.dispatch(PlayVideo(
             key=h.device_key, path=Path(path),
         ))
         if not result.ok:
@@ -2005,6 +2280,29 @@ class TRCCApp(QMainWindow):
         h = self._active_lcd()
         if path and h:
             h.export_config(Path(path))
+
+    def _on_export_all_themes(self) -> None:
+        """Export all local themes to a chosen directory."""
+        log.info("_on_export_all_themes")
+        from PySide6.QtWidgets import QFileDialog
+        dir_path = QFileDialog.getExistingDirectory(
+            self, "Export All Themes", "")
+        if not dir_path:
+            return
+        h = self._active_lcd()
+        if not h:
+            self.uc_preview.set_status("No active LCD panel")
+            return
+        export_dir = Path(dir_path)
+        count = 0
+        for theme in self.uc_theme_local._all_themes:
+            theme_path = export_dir / f"{theme.name}.tr"
+            try:
+                h.export_config(theme_path)
+                count += 1
+            except Exception as e:
+                log.warning("Export failed for %s: %s", theme.name, e)
+        self.uc_preview.set_status(f"Exported {count} theme(s) to {dir_path}")
 
     def _on_import_clicked(self) -> None:
         log.info("_on_import_clicked")
@@ -2160,14 +2458,10 @@ class TRCCApp(QMainWindow):
         self._hide_cutters()
         h = self._active_lcd()
         if zt_path and h:
-            # ``SetBackground`` persists the .zt as the device's
-            # background override (``DeviceSettings.background_path``)
-            # THEN delegates to ``PlayVideo`` for the decode/animate
-            # pipeline — same as the image cutter's ``_on_image_cut_done``.
-            # Dispatching ``PlayVideo`` directly here (the old code) left
-            # no override for ``SaveTheme`` to bake in, so a saved theme
-            # lost the video and reloaded with a black background.
-            result = self._app.dispatch(SetBackground(
+            # ``PlayVideo`` decodes the .zt, publishes ``VideoStarted``;
+            # handler observer starts the per-frame timer.  Same path
+            # cloud + local video themes take.
+            result = self._app.dispatch(PlayVideo(
                 key=h.device_key, path=Path(zt_path),
             ))
             if result.ok:
@@ -2470,8 +2764,74 @@ class TRCCApp(QMainWindow):
 
     # ── Window Events ───────────────────────────────────────────────
 
+    def _toggle_maximize(self) -> None:
+        if self._is_maximized:
+            self._is_maximized = False
+            self.showNormal()
+        else:
+            self._is_maximized = True
+            self.showMaximized()
+
+    def _capture_base_geometries(self) -> None:
+        """Snapshot all widget geometries at base size for later rescaling."""
+        central = self.centralWidget()
+        if central is None:
+            return
+        self._widget_geoms.clear()
+        self._font_pts.clear()
+        for w in self._iter_all_widgets(central):
+            self._widget_geoms[w] = w.geometry()
+            font = w.font()
+            self._font_pts[w] = font.pointSizeF()
+        # Also capture central widget itself
+        self._widget_geoms[central] = central.geometry()
+
+    def _iter_all_widgets(self, root: QWidget):
+        """Recursively yield all child widgets."""
+        yield root
+        for child in root.findChildren(QWidget):
+            yield child
+
+    def _apply_scale(self, scale: float) -> None:
+        """Rescale all widget geometries and fonts by *scale* factor."""
+        central = self.centralWidget()
+        if central is None or not self._widget_geoms:
+            return
+        for w, (x, y, w_, h_) in self._widget_geoms.items():
+            if w is central:
+                continue
+            if not self._widget_geoms.get(w):
+                continue
+            w.setGeometry(
+                int(x * scale), int(y * scale),
+                int(w_ * scale), int(h_ * scale),
+            )
+            # Scale font
+            base_pt = self._font_pts.get(w)
+            if base_pt and base_pt > 0:
+                font = w.font()
+                font.setPointSizeF(base_pt * scale)
+                w.setFont(font)
+        # Scale central widget to fill the window
+        central.setGeometry(0, 0, int(self._base_w * scale), int(self._base_h * scale))
+
+    def resizeEvent(self, event: Any) -> None:
+        super().resizeEvent(event)
+        if not self._widget_geoms:
+            self._capture_base_geometries()
+        new_w = event.size().width()
+        new_h = event.size().height()
+        scale = min(new_w / self._base_w, new_h / self._base_h)
+        if scale < 1.0:
+            scale = 1.0
+        if abs(scale - self._scale_factor) > 0.001:
+            self._scale_factor = scale
+            self._apply_scale(scale)
+
     def showEvent(self, event: Any) -> None:
         super().showEvent(event)
+        if not self._widget_geoms:
+            self._capture_base_geometries()
 
     def mousePressEvent(self, event: Any) -> None:
         if self._decorated or event.button() != Qt.MouseButton.LeftButton:
@@ -2481,6 +2841,13 @@ class TRCCApp(QMainWindow):
             self._drag_pos = (
                 event.globalPosition().toPoint() - self.frameGeometry().topLeft())
         event.accept()
+
+    def keyPressEvent(self, event: Any) -> None:
+        if event.key() == Qt.Key.Key_F12:
+            self._run_layout_diagnostic()
+            event.accept()
+            return
+        super().keyPressEvent(event)
 
     def mouseMoveEvent(self, event: Any) -> None:
         if self._drag_pos is not None:
@@ -2492,9 +2859,20 @@ class TRCCApp(QMainWindow):
         event.accept()
 
     def closeEvent(self, event: Any) -> None:
-        if self._tray.intercept_close(event):
+        if (not self._force_quit
+                and self._tray.isSystemTrayAvailable()
+                and self._tray.isVisible()
+                and not (self._minimize_on_close and self._minimized_to_taskbar)):
+            event.ignore()
+            if self._minimize_on_close:
+                self._minimized_to_taskbar = True
+                self.showMinimized()
+            else:
+                self.hide()
             return
-        # Genuine quit (Exit / force): the controller already hid the tray.
+        self._minimized_to_taskbar = False
+
+        self._tray.hide()
         self._screencast.cleanup()
         for h in list(self._handlers.values()):
             h.cleanup()

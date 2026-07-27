@@ -49,11 +49,11 @@ QLabel#title {
 }
 QLabel#version {
     color: #585b70;
-    font-size: 10px;
+    font-size: 12px;
 }
 QLabel#status {
     color: #a6adc8;
-    font-size: 10px;
+    font-size: 12px;
 }
 QProgressBar {
     background-color: #313244;
@@ -77,7 +77,7 @@ class TrccSplash(QWidget):
 
     def __init__(self) -> None:
         super().__init__()
-        self.setWindowTitle("TRCC Linux")
+        self.setWindowTitle("TRCC")
         self.setFixedSize(_SPLASH_W, _SPLASH_H)
         self.setWindowFlags(
             Qt.WindowType.FramelessWindowHint

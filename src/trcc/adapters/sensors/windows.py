@@ -19,6 +19,7 @@ from contextlib import AbstractContextManager, nullcontext
 from ...core.ports import CpuSource, GpuSource
 from ._hwinfo import HwinfoCpu, discover_hwinfo_gpus
 from ._lhm import LhmCpu, discover_lhm_disks, discover_lhm_gpus
+from ._lhm_inproc import LhmInprocCpu
 from ._msacpi import WmiAcpiCpu
 from ._wmi_gpu import discover_wmi_gpus
 from .aggregator import BaselineSensors
@@ -41,6 +42,7 @@ def build_windows_sensors(
     log.info("build_windows_sensors: called")
     cpu: CpuSource = CpuSourceChain([
         HwinfoCpu(),
+        LhmInprocCpu(),
         LhmCpu(),
         WmiAcpiCpu(),
         PsutilCpu(),

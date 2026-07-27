@@ -232,7 +232,7 @@ class UCDevice(BasePanel):
         self.no_devices_label = QLabel("No devices found", self.device_area)
         self.no_devices_label.setGeometry(*Layout.NO_DEVICES_LABEL)
         self.no_devices_label.setStyleSheet(
-            f"color: {Colors.EMPTY_TEXT}; font-size: 10px; background: transparent;"
+            f"color: {Colors.EMPTY_TEXT}; font-size: 12px; background: transparent;"
         )
         self.no_devices_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.no_devices_label.setWordWrap(True)
@@ -240,7 +240,7 @@ class UCDevice(BasePanel):
         self.hint_label = QLabel("Connect a Thermalright\nLCD cooler via USB", self.device_area)
         self.hint_label.setGeometry(*Layout.HINT_LABEL)
         self.hint_label.setStyleSheet(
-            f"color: {Colors.MUTED_TEXT}; font-size: 9px; background: transparent;"
+            f"color: {Colors.MUTED_TEXT}; font-size: 12px; background: transparent;"
         )
         self.hint_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.hint_label.setWordWrap(True)  # per-OS hint is a full sentence

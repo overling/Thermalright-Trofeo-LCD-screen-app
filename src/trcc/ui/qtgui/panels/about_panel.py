@@ -23,7 +23,7 @@ class AboutPanel(BasePanel):
         layout.setSpacing(12)
         layout.addStretch(1)
 
-        title = QLabel("TRCC Linux", self)
+        title = QLabel("TRCC", self)
         title_font = QFont()
         title_font.setPointSize(28)
         title_font.setBold(True)

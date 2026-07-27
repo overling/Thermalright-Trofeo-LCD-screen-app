@@ -693,6 +693,9 @@ HARDWARE_METRICS: dict[tuple[int, int], str] = {
     (1, 2): "gpu_usage",
     (1, 3): "gpu_clock",
     (1, 4): "gpu_power",
+    (1, 5): "gpu_vram_used",
+    (1, 6): "gpu_vram_free",
+    (1, 7): "gpu_vram_total",
     # MEM (main_count=2)
     (2, 1): "mem_percent",
     (2, 2): "mem_clock",
@@ -926,7 +929,10 @@ SENSORS: dict[str, list[tuple[str, str, str, str]]] = {
     "gpu":     [("temp",      "TEMP",      "°C",   "gpu_temp"),
                 ("usage",     "Usage",     "%",    "gpu_usage"),
                 ("clock",     "Clock",     "MHz",  "gpu_clock"),
-                ("power",     "Power",     "W",    "gpu_power")],
+                ("power",     "Power",     "W",    "gpu_power"),
+                ("vram_used", "VRAM Used", "MB",   "gpu_vram_used"),
+                ("vram_free", "VRAM Free", "MB",   "gpu_vram_free"),
+                ("vram_total","VRAM Total","MB",   "gpu_vram_total")],
     "memory":  [("temp",      "TEMP",      "°C",   "mem_temp"),
                 ("usage",     "Usage",     "%",    "mem_percent"),
                 ("clock",     "Clock",     "MHz",  "mem_clock"),
@@ -1028,7 +1034,7 @@ PANEL_ASSET_DIMS: dict[tuple[int, int], tuple[int, int]] = {
     (1280, 480): (480, 180),  (480, 1280): (180, 480),
     (1600, 720): (400, 180),  (720, 1600): (180, 400),
     (1920, 462): (480, 116),  (462, 1920): (116, 480),
-    (1920, 440): (480, 110),  (440, 1920): (110, 480),
+    (1920, 400): (480, 110),  (400, 1920): (110, 480),
 }
 
 
@@ -1081,6 +1087,9 @@ class GpuMetrics:
     usage: float = 0.0
     clock: float = 0.0
     power: float = 0.0
+    vram_used: float = 0.0
+    vram_total: float = 0.0
+    vram_free: float = 0.0
 
 
 @dataclass(slots=True)
@@ -1109,6 +1118,9 @@ class HardwareMetrics:
     gpu_usage: float = 0.0
     gpu_clock: float = 0.0
     gpu_power: float = 0.0
+    gpu_vram_used: float = 0.0
+    gpu_vram_total: float = 0.0
+    gpu_vram_free: float = 0.0
     mem_temp: float = 0.0
     mem_percent: float = 0.0
     mem_clock: float = 0.0
@@ -1178,17 +1190,28 @@ def is_safe_archive_member(name: str) -> bool:
 
 # ``category_keysuffix`` → overlay ``(main_count, sub_count)``.
 # Used by the activity sidebar's click-to-add-element flow.
+# MUST align with HARDWARE_METRICS above — the (main, sub) pair here is
+# looked up in HARDWARE_METRICS by the renderer to resolve the metric name.
 SENSOR_TO_OVERLAY: dict[str, tuple[int, int]] = {
+    # CPU — (0,1)=cpu_temp, (0,2)=cpu_percent, (0,3)=cpu_freq, (0,4)=cpu_power
     "cpu_temp": (0, 1),     "cpu_usage": (0, 2),
     "cpu_clock": (0, 3),    "cpu_power": (0, 4),
+    # GPU — (1,1)=gpu_temp, (1,2)=gpu_usage, (1,3)=gpu_clock, (1,4)=gpu_power,
+    #        (1,5)=gpu_vram_used, (1,6)=gpu_vram_free, (1,7)=gpu_vram_total
     "gpu_temp": (1, 1),     "gpu_usage": (1, 2),
     "gpu_clock": (1, 3),    "gpu_power": (1, 4),
-    "memory_temp": (2, 1),  "memory_usage": (2, 2),
-    "memory_clock": (2, 3), "memory_available": (2, 4),
-    "hdd_temp": (3, 1),     "hdd_activity": (3, 2),
-    "hdd_read": (3, 3),     "hdd_write": (3, 4),
-    "network_upload": (4, 1),   "network_download": (4, 2),
-    "network_total_up": (4, 3), "network_total_dl": (4, 4),
+    "gpu_vram_used": (1, 5),  "gpu_vram_free": (1, 6),
+    "gpu_vram_total": (1, 7),
+    # MEM — (2,1)=mem_percent, (2,2)=mem_clock, (2,3)=mem_available, (2,4)=mem_temp
+    "memory_usage": (2, 1),    "memory_clock": (2, 2),
+    "memory_available": (2, 3), "memory_temp": (2, 4),
+    # HDD — (3,1)=disk_read, (3,2)=disk_write, (3,3)=disk_activity, (3,4)=disk_temp
+    "hdd_read": (3, 1),     "hdd_write": (3, 2),
+    "hdd_activity": (3, 3), "hdd_temp": (3, 4),
+    # NET — (4,1)=net_down, (4,2)=net_up, (4,3)=net_total_down, (4,4)=net_total_up
+    "network_download": (4, 1),   "network_upload": (4, 2),
+    "network_total_dl": (4, 3),   "network_total_up": (4, 4),
+    # FAN — (5,1)=fan_cpu, (5,2)=fan_gpu, (5,3)=fan_ssd, (5,4)=fan_sys2
     "fan_cpu_fan": (5, 1),  "fan_gpu_fan": (5, 2),
     "fan_ssd_fan": (5, 3),  "fan_fan2": (5, 4),
 }

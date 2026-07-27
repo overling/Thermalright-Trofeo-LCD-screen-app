@@ -73,11 +73,21 @@ _DEFAULT_TIMEOUT_MS = 100
 # disk-backed cache keyed by (VID, PID, usb_path) lets the second
 # launch skip the handshake and use the cached PM/SUB.
 #
-# Cache file: ``~/.trcc/led_probe_cache.json`` — matches legacy layout
-# byte-for-byte so installs that migrated from legacy keep the cached
-# entries.
+# Cache file: portable builds keep it next to the exe (in ``<exe>/.trcc/``);
+# non-portable dev runs use ``~/.trcc/`` to match legacy layout byte-for-byte
+# so installs that migrated from legacy keep the cached entries.
 
-_PROBE_CACHE_PATH = Path.home() / ".trcc" / "led_probe_cache.json"
+def _probe_cache_path() -> Path:
+    """Resolve the probe-cache path, honouring the portable layout."""
+    import sys
+    exe_dir = Path(sys.executable).parent
+    if (
+        getattr(sys, "frozen", False)
+        or (exe_dir / "trcc-user").exists()
+        or (exe_dir / ".trcc").exists()
+    ):
+        return exe_dir / ".trcc" / "led_probe_cache.json"
+    return Path.home() / ".trcc" / "led_probe_cache.json"
 
 
 def _probe_cache_key(vid: int, pid: int, usb_path: str = "") -> str:
@@ -104,25 +114,26 @@ def _probe_cache_save(
     same-power-cycle restart skips the now-broken handshake step.
     """
     try:
-        _PROBE_CACHE_PATH.parent.mkdir(parents=True, exist_ok=True)
+        cache_path = _probe_cache_path()
+        cache_path.parent.mkdir(parents=True, exist_ok=True)
         cache: dict[str, dict[str, object]] = {}
-        if _PROBE_CACHE_PATH.is_file():
+        if cache_path.is_file():
             try:
                 cache = json.loads(
-                    _PROBE_CACHE_PATH.read_text(encoding="utf-8"),
+                    cache_path.read_text(encoding="utf-8"),
                 )
             except (OSError, ValueError):
                 log.debug("probe cache: corrupt at %s, rewriting fresh",
-                          _PROBE_CACHE_PATH)
+                          cache_path)
                 cache = {}
         cache[_probe_cache_key(vid, pid, usb_path)] = {
             "pm": pm, "sub": sub, "model_name": model_name,
         }
-        _PROBE_CACHE_PATH.write_text(
+        cache_path.write_text(
             json.dumps(cache, indent=2) + "\n", encoding="utf-8",
         )
         log.info("probe cache: saved %04x:%04x pm=%d sub=%d → %s",
-                 vid, pid, pm, sub, _PROBE_CACHE_PATH)
+                 vid, pid, pm, sub, cache_path)
     except OSError as e:
         log.warning("probe cache: save failed for %04x:%04x: %s: %s",
                     vid, pid, type(e).__name__, e)
@@ -138,9 +149,10 @@ def _probe_cache_load(
     a bus path still resolves.
     """
     try:
-        if not _PROBE_CACHE_PATH.is_file():
+        cache_path = _probe_cache_path()
+        if not cache_path.is_file():
             return None
-        cache = json.loads(_PROBE_CACHE_PATH.read_text(encoding="utf-8"))
+        cache = json.loads(cache_path.read_text(encoding="utf-8"))
     except (OSError, ValueError) as e:
         log.debug("probe cache: load failed: %s: %s",
                   type(e).__name__, e)

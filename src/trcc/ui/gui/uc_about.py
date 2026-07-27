@@ -180,7 +180,8 @@ class UCAbout(BasePanel):
                  gpu_list: list[tuple[str, str]] | None = None,
                  app: App | None = None,
                  ui_state: UiStateStore | None = None):
-        super().__init__(parent, width=Sizes.FORM_W, height=Sizes.FORM_H)
+        super().__init__(parent)
+        self.setFixedSize(Sizes.FORM_W, Sizes.FORM_H)
 
         self._platform = platform
         self._app = app              # next/ App for Command dispatch
@@ -195,10 +196,12 @@ class UCAbout(BasePanel):
             self._read_hdd = app.settings.app.hdd_enabled
             self._refresh_interval = int(app.settings.app.refresh_interval_s)
             self._gpu_device = app.settings.app.active_gpu or ''
+            self._start_minimized = app.settings.app.start_minimized
         else:
             self._read_hdd = False
             self._refresh_interval = 2
             self._gpu_device = ''
+            self._start_minimized = False
 
         # Load checkbox pixmaps
         sz = Layout.ABOUT_CHECKBOX_SIZE
@@ -226,6 +229,11 @@ class UCAbout(BasePanel):
         self.startup_btn = self._make_checkbox(
             *Layout.ABOUT_STARTUP, checked=self._autostart)
         self.startup_btn.clicked.connect(self._on_startup_clicked)
+
+        # === Minimize on startup checkbox (hide to tray at boot) ===
+        self.minimize_startup_btn = self._make_checkbox(
+            *Layout.ABOUT_MINIMIZE_STARTUP, checked=self._start_minimized)
+        self.minimize_startup_btn.clicked.connect(self._on_minimize_startup_clicked)
 
         # === Temperature unit radio buttons ===
         self.celsius_btn = self._make_checkbox(*Layout.ABOUT_CELSIUS, checked=True)
@@ -369,6 +377,13 @@ class UCAbout(BasePanel):
                 autostart.disable()
         self.startup_changed.emit(self._autostart)
         self.invoke_delegate(self.CMD_STARTUP, self._autostart)
+
+    def _on_minimize_startup_clicked(self):
+        """Toggle minimize on startup."""
+        log.info("_on_minimize_startup_clicked")
+        self._start_minimized = self.minimize_startup_btn.isChecked()
+        if self._app is not None:
+            self._app.settings.set_start_minimized(self._start_minimized)
 
     # --- Temperature unit ---
 

@@ -7,7 +7,7 @@ Two PID variants:
                     SUB = resp[22]
 
 Both variants resolve to FBL 192 (1920×462 widescreen JPEG) by default,
-disambiguated to (1280, 480) or (1920, 440) for PMs 68/69 via _FBL_192_BY_PM.
+disambiguated to (1280, 480) or (1920, 400) for PMs 68/69 via _FBL_192_BY_PM.
 """
 from __future__ import annotations
 
@@ -60,7 +60,7 @@ def _make_ly(transport: FakeBulkTransport, *, pid: int = 0x5408,
     (2, 65),    # ≤3 clamped to 1 → PM=65
     (3, 65),    # ≤3 clamped to 1 → PM=65
     (4, 68),    # 4 → PM=68 (disambiguated to 1280×480)
-    (5, 69),    # 5 → PM=69 (disambiguated to 1920×440)
+    (5, 69),    # 5 → PM=69 (disambiguated to 1920×400)
 ])
 def test_ly_pm_extraction_with_clamp(
     fake_bulk: FakeBulkTransport, resp20: int, expected_pm: int,
@@ -78,7 +78,7 @@ def test_ly_pm_extraction_with_clamp(
     (1, (1920, 462)),   # PM=65 → FBL=192 base
     (2, (1920, 462)),   # clamped to 1 → PM=65 → FBL=192 base
     (4, (1280, 480)),   # PM=68 → FBL=192, disambiguated to 1280×480
-    (5, (1920, 440)),   # PM=69 → FBL=192, disambiguated to 1920×440
+    (5, (1920, 400)),   # PM=69 → FBL=192, disambiguated to 1920×400
 ])
 def test_ly_handshake_resolution_uses_fbl_192_disambiguation(
     fake_bulk: FakeBulkTransport,
@@ -105,7 +105,7 @@ def test_ly_handshake_resolution_uses_fbl_192_disambiguation(
     (15, 65, (1920, 462)),    # 50+15=65 → FBL=192
     (16, 66, (1920, 462)),    # 50+16=66 → FBL=192
     (18, 68, (1280, 480)),    # 50+18=68 → FBL=192 → disambiguated
-    (19, 69, (1920, 440)),    # 50+19=69 → FBL=192 → disambiguated
+    (19, 69, (1920, 400)),    # 50+19=69 → FBL=192 → disambiguated
 ])
 def test_ly1_pm_extraction_and_resolution(
     fake_bulk: FakeBulkTransport,

@@ -70,6 +70,8 @@ class AppSettings:
     # User-selected primary GPU (e.g. 'nvidia:0', 'amd:0', or 'intel:igpu').
     # None = let SensorEnumerator.primary_gpu() pick automatically.
     active_gpu: str | None = None
+    # Start hidden in the system tray when launched at boot (toggle in GUI).
+    start_minimized: bool = False
 
 
 # =========================================================================
@@ -196,6 +198,17 @@ class Settings:
         with self._lock:
             self._app.active_gpu = gpu_key
             self._save()
+
+    def set_start_minimized(self, enabled: bool) -> None:
+        """Toggle "minimize on startup" — start hidden in the tray at boot."""
+        log.info("set_start_minimized: enabled=%s", enabled)
+        with self._lock:
+            self._app.start_minimized = bool(enabled)
+            self._save()
+
+    @property
+    def start_minimized(self) -> bool:
+        return self._app.start_minimized
 
     # ── DeviceSettings surface ────────────────────────────────────────
 

@@ -48,17 +48,20 @@ def configure_qt_environment() -> None:
         "QT_LOGGING_RULES",
         "qt.qpa.services=false;qt.qpa.theme.gnome=false",
     )
-    os.environ["QT_ENABLE_HIGHDPI_SCALING"] = "0"
-    # Wipe an offscreen platform forced by an upstream CLI invocation
-    # so subsequent windowed launches show real chrome.
+    # In Qt 6, HighDPI scaling is always enabled.  We let Qt handle DPI
+    # scaling natively and adjust our manual scaling in __init__.py to
+    # account for Qt's devicePixelRatio.
     os.environ.pop("QT_QPA_PLATFORM", None)
 
 
-def configure_qapplication(qapp: QApplication) -> None:
+def configure_qapplication(qapp: QApplication, font_scale: float = 1.0) -> None:
     """Apply the shared QApplication-level settings.  Idempotent.
 
     Env vars are set separately by :func:`configure_qt_environment`, which
     callers MUST invoke BEFORE building the QApplication (see its docstring).
+
+    ``font_scale`` multiplies the base 10pt font size to match the DPI
+    scaling applied to Layout/Sizes constants.
     """
     # ── QApplication-level ───────────────────────────────────────────
     qapp.setQuitOnLastWindowClosed(False)
@@ -67,14 +70,15 @@ def configure_qapplication(qapp: QApplication) -> None:
     # Font: try Microsoft YaHei (CJK + Latin coverage matches Windows
     # baked overlays).  Fall back to Sans Serif so a fresh install
     # without that font still renders cleanly.
-    font = QFont("Microsoft YaHei", 10)
+    _pt = max(1, int(round(10 * font_scale)))
+    font = QFont("Microsoft YaHei", _pt)
     if not font.exactMatch():
-        font = QFont("Sans Serif", 10)
+        font = QFont("Sans Serif", _pt)
     qapp.setFont(font)
 
     log.debug(
-        "configure_qapplication: font=%r quit_on_last_closed=%s",
-        qapp.font().family(),
+        "configure_qapplication: font=%r pt=%d scale=%.2f quit_on_last_closed=%s",
+        qapp.font().family(), _pt, font_scale,
         qapp.quitOnLastWindowClosed(),
     )
 

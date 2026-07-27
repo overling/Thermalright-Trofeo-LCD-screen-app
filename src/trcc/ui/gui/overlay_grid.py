@@ -77,7 +77,7 @@ class OverlayGridPanel(QFrame):
         else:
             self._toggle_btn.setText("ON")
             self._toggle_btn.setStyleSheet(
-                "QPushButton { background: #4CAF50; color: white; font-size: 8px; }"
+                "QPushButton { background: #4CAF50; color: white; font-size: 12px; }"
                 "QPushButton:checked { background: #4CAF50; }"
                 "QPushButton:!checked { background: #666; }"
             )

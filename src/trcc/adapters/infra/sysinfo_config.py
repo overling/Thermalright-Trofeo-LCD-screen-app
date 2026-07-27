@@ -149,9 +149,18 @@ class SysInfoConfig:
     """Load / save the sensor-dashboard layout."""
 
     def __init__(self, config_path: Path | None = None) -> None:
-        self._path = (
-            config_path or Path.home() / ".trcc" / "system_config.json"
-        )
+        if config_path is None:
+            import sys
+            exe_dir = Path(sys.executable).parent
+            if (
+                getattr(sys, "frozen", False)
+                or (exe_dir / "trcc-user").exists()
+                or (exe_dir / ".trcc").exists()
+            ):
+                config_path = exe_dir / ".trcc" / "system_config.json"
+            else:
+                config_path = Path.home() / ".trcc" / "system_config.json"
+        self._path = config_path
         self.panels: list[PanelConfig] = []
 
     @property

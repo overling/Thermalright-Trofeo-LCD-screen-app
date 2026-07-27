@@ -360,6 +360,9 @@ class BaselineSensors(SensorEnumerator):
             fan = self._read(gpu.fan, f"gpu:{idx}:fan")
             vram_used = self._read(gpu.vram_used, f"gpu:{idx}:vram_used")
             vram_total = self._read(gpu.vram_total, f"gpu:{idx}:vram_total")
+            vram_free: float | None = None
+            if vram_used is not None and vram_total is not None:
+                vram_free = max(0.0, vram_total - vram_used)
             for prefix in (f"gpu:{idx}", f"gpu:{gpu.key}"):
                 _store(r, f"{prefix}:temp", temp)
                 _store(r, f"{prefix}:usage", usage)
@@ -368,6 +371,7 @@ class BaselineSensors(SensorEnumerator):
                 _store(r, f"{prefix}:fan", fan)
                 _store(r, f"{prefix}:vram_used", vram_used)
                 _store(r, f"{prefix}:vram_total", vram_total)
+                _store(r, f"{prefix}:vram_free", vram_free)
             if gpu is primary:
                 _store(r, "gpu:primary:temp", temp)
                 _store(r, "gpu:primary:usage", usage)
@@ -376,6 +380,7 @@ class BaselineSensors(SensorEnumerator):
                 _store(r, "gpu:primary:fan", fan)
                 _store(r, "gpu:primary:vram_used", vram_used)
                 _store(r, "gpu:primary:vram_total", vram_total)
+                _store(r, "gpu:primary:vram_free", vram_free)
 
         # Fans
         for fan in self._fans:
