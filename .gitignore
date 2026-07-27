@@ -111,6 +111,13 @@ doc/*.pdf
 doc/audit/
 
 # ──────────────────────────────────────────────
+.venv_build/
+.windsurf/
+7z-standalone/
+_old_pyz/
+*.ps1
+!install.sh
+
 # Dev screenshots, temp scripts, build logs
 # ──────────────────────────────────────────────
 /*.png
