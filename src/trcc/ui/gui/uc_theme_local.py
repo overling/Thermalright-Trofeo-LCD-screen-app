@@ -23,7 +23,7 @@ from ...core.results import ThemeListEntry
 from ..presentation.slideshow_model import SlideshowModel
 from .assets import Assets
 from .base import BaseThemeBrowser, BaseThumbnail
-from .constants import Layout, Styles
+from .constants import Layout, Sizes, Styles
 
 log = logging.getLogger(__name__)
 
@@ -51,7 +51,7 @@ class ThemeThumbnail(BaseThumbnail):
             self._delete_btn.setGeometry(96, 2, 20, 20)
             self._delete_btn.setStyleSheet(
                 "QPushButton { background: rgba(180, 40, 40, 200); color: white; "
-                "border: none; border-radius: 10px; font-size: 11px; font-weight: bold; }"
+                "border: none; border-radius: 10px; font-size: 12px; font-weight: bold; }"
                 "QPushButton:hover { background: rgba(220, 50, 50, 255); }"
             )
             self._delete_btn.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -136,9 +136,11 @@ class UCThemeLocal(BaseThemeBrowser):
     CMD_FILTER_CHANGED = 3
     CMD_SLIDESHOW = 48
     CMD_DELETE = 32
+    CMD_EXPORT_ALL = 64
 
     slideshow_changed = Signal(bool, int, list)  # enabled, interval, theme_indices
     delete_requested = Signal(object)  # LocalThemeItem
+    export_all_requested = Signal()  # export all themes
 
     def __init__(self, parent=None):
         self.filter_mode = self.MODE_ALL
@@ -158,23 +160,24 @@ class UCThemeLocal(BaseThemeBrowser):
         self._btn_refs = [btn_normal, btn_active]
 
         configs = [
-            (Layout.LOCAL_BTN_ALL, self.MODE_ALL),
-            (Layout.LOCAL_BTN_DEFAULT, self.MODE_DEFAULT),
-            (Layout.LOCAL_BTN_USER, self.MODE_USER),
+            (Layout.LOCAL_BTN_ALL, self.MODE_ALL, 'All'),
+            (Layout.LOCAL_BTN_DEFAULT, self.MODE_DEFAULT, 'Default'),
+            (Layout.LOCAL_BTN_USER, self.MODE_USER, 'User'),
         ]
-        for (x, y, w, h), mode in configs:
+        for (x, y, w, h), mode, label in configs:
             btn = self._make_filter_button(x, y, w, h, btn_normal, btn_active,
-                self._on_filter_clicked)
+                self._on_filter_clicked, text=label)
             btn.setProperty('filter_mode', mode)
             self._filter_buttons.append(btn)
 
         self._filter_buttons[0].setChecked(True)
 
         # Slideshow toggle — Windows: buttonLunbo (531, 28) 40x17
-        self._lunbo_off = Assets.load_pixmap('theme_local_carousel.png', 40, 17)
-        self._lunbo_on = Assets.load_pixmap('theme_local_carousel_active.png', 40, 17)
+        self._lunbo_off = Assets.load_pixmap('theme_local_carousel.png', 50, 24)
+        self._lunbo_on = Assets.load_pixmap('theme_local_carousel_active.png', 50, 24)
         self.slideshow_btn = QPushButton(self)
-        self.slideshow_btn.setGeometry(531, 28, 40, 17)
+        _s = Sizes.WINDOW_W / 1454.0
+        self.slideshow_btn.setGeometry(int(431 * _s), int(28 * _s), int(50 * _s), int(24 * _s))
         self.slideshow_btn.setFlat(True)
         self.slideshow_btn.setStyleSheet(Styles.FLAT_BUTTON)
         self.slideshow_btn.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -184,23 +187,39 @@ class UCThemeLocal(BaseThemeBrowser):
         self.slideshow_btn.setToolTip("Toggle theme slideshow")
         self.slideshow_btn.clicked.connect(self._on_slideshow_clicked)
 
+        # Clock symbol label — to the left of the timer input
+        self._clock_label = QLabel("\U0001F551", self)
+        self._clock_label.setGeometry(int(488 * _s), int(20 * _s), int(24 * _s), int(32 * _s))
+        self._clock_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._clock_label.setStyleSheet(
+            "QLabel { color: #B49653; border: none; font-size: 18pt; }"
+        )
+
         # Slideshow interval input — Windows: textBoxTimer (602, 29) 24x16
         self.timer_input = QLineEdit(self)
-        self.timer_input.setGeometry(602, 29, 24, 16)
+        self.timer_input.setGeometry(int(512 * _s), int(28 * _s), int(34 * _s), int(24 * _s))
         self.timer_input.setAlignment(Qt.AlignmentFlag.AlignRight)
         self.timer_input.setMaxLength(3)
         self.timer_input.setText("3")
         self.timer_input.setToolTip("Slideshow interval (seconds)")
         self.timer_input.setStyleSheet(
             "QLineEdit { background: #232227; color: white; border: none; "
-            "font-family: 'Microsoft YaHei'; font-size: 9pt; }"
+            "font-family: 'Microsoft YaHei'; font-size: 11pt; }"
         )
         self.timer_input.editingFinished.connect(self._on_timer_changed)
 
-        # Export button — Windows: buttonThemeOut (651, 27) 60x18 (empty handler)
-        export_px = Assets.load_pixmap('theme_local_export_all.png', 60, 18)
+        # "S" (seconds) label — to the right of the timer input
+        self._sec_label = QLabel("S", self)
+        self._sec_label.setGeometry(int(546 * _s), int(28 * _s), int(14 * _s), int(24 * _s))
+        self._sec_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._sec_label.setStyleSheet(
+            "QLabel { color: #B49653; border: none; font-size: 11pt; font-weight: bold; }"
+        )
+
+        # Export button — Windows: buttonThemeOut (651, 27) 60x18
+        export_px = Assets.load_pixmap('theme_local_export_all.png', 75, 24)
         self.export_btn = QPushButton(self)
-        self.export_btn.setGeometry(651, 27, 60, 18)
+        self.export_btn.setGeometry(int(576 * _s), int(28 * _s), int(75 * _s), int(24 * _s))
         self.export_btn.setFlat(True)
         self.export_btn.setStyleSheet(Styles.FLAT_BUTTON)
         self.export_btn.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -209,6 +228,7 @@ class UCThemeLocal(BaseThemeBrowser):
             self.export_btn.setIcon(QIcon(export_px))
             self.export_btn.setIconSize(self.export_btn.size())
             self.export_btn._img_ref = export_px  # type: ignore[attr-defined]
+        self.export_btn.clicked.connect(self._on_export_all_clicked)
 
     def _create_thumbnail(self, item_info: LocalThemeItem) -> ThemeThumbnail:
         return ThemeThumbnail(item_info)
@@ -362,6 +382,11 @@ class UCThemeLocal(BaseThemeBrowser):
         self.timer_input.setText(str(val))
         log.info("UCThemeLocal._on_timer_changed: -> %ss", val)
         self.invoke_delegate(self.CMD_SLIDESHOW)
+
+    def _on_export_all_clicked(self):
+        """Export all themes (Windows: buttonThemeOut_Click)."""
+        log.info("UCThemeLocal._on_export_all_clicked")
+        self.export_all_requested.emit()
 
     def set_slideshow_state(self, themes: list[str], enabled: bool,
                             interval: int) -> None:

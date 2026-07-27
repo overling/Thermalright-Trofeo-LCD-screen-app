@@ -109,3 +109,56 @@ doc/*.pdf
 
 # C# audit docs (reference only, not for distribution)
 doc/audit/
+
+# ──────────────────────────────────────────────
+# Dev screenshots, temp scripts, build logs
+# ──────────────────────────────────────────────
+/*.png
+/*.bak
+*.bak2
+*.bak3
+*.bak4
+build_log*.txt
+build_v*/
+dist_backup*/
+dist_clean/
+dist_v*/
+build_clean/
+*_extracted/
+lhm_nightly/
+lhm_nightly.zip
+ffmpeg.exe
+qt.conf
+trcc.manifest
+trcc-gui.spec
+capture*.py
+deploy*.py
+decomp*.py
+extract_*.py
+fix_*.py
+list_windows.py
+maximize_window.py
+move_*.py
+ocr_*.py
+regen_thumbs.py
+resize_window.py
+restore_window.py
+run_*.py
+screenshot_*.py
+screenshot_tabs*.py
+start_lhm_*.py
+ui_automation_check*.py
+verify_*.py
+zoom*.py
+zoom_crops.py
+detail_crops.py
+label_crops.py
+dismiss_dialog.py
+filter_log*.py
+rt_hook_dpi.py
+trcc_app_v983.py
+trcc_app.diff.txt
+diff_trcc_app.txt
+constants_v983.txt
+/*.txt
+!requirements*.txt
