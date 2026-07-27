@@ -9,7 +9,7 @@ We appreciate responsible disclosure. If you discover a security vulnerability i
 
 In non-sensitive cases, you may open a public issue using the security report template (`.github/ISSUE_TEMPLATE/security-report.md`), and add the label `security`.
 
-Thank you for helping keep TRCC Linux secure.
+Thank you for helping keep this project secure.
 
 ## Known Limitations
 
