@@ -80,6 +80,8 @@ _HW_TO_SENSOR: dict[tuple[int, int], tuple[str, str]] = {
     (1, 5): ("gpu:primary:vram_used",  "{value:.0f} MB"),
     (1, 6): ("gpu:primary:vram_free",  "{value:.0f} MB"),
     (1, 7): ("gpu:primary:vram_total", "{value:.0f} MB"),
+    (1, 8): ("gpu:primary:vram_used_gb",  "{value:.1f} GB"),
+    (1, 9): ("gpu:primary:vram_total_gb", "{value:.1f} GB"),
     (2, 1): ("memory:percent",      "{value:.0f}%"),
     (2, 2): ("memory:clock",        "{value:.0f} MHz"),
     (2, 3): ("memory:available",    "{value:.0f} MB"),

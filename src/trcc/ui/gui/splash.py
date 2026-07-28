@@ -90,7 +90,7 @@ class TrccSplash(QWidget):
         layout.setContentsMargins(36, 30, 36, 26)
         layout.setSpacing(4)
 
-        title = QLabel("TRCC Linux")
+        title = QLabel("TRCC Trofeo")
         title.setObjectName("title")
         title.setAlignment(Qt.AlignmentFlag.AlignCenter)
 

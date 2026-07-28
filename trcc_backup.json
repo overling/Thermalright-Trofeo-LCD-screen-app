@@ -1,0 +1,47 @@
+{
+  "app": {
+    "language": "en",
+    "refresh_interval_s": 2.0,
+    "active_device": null,
+    "autostart_configured": false,
+    "ui_theme": "system",
+    "hdd_enabled": true,
+    "temp_unit": "C",
+    "time_format": "24h",
+    "date_format": "yyyy/MM/dd",
+    "active_gpu": null,
+    "start_minimized": false
+  },
+  "devices": {
+    "0416:5408": {
+      "orientation": 0,
+      "brightness": 25,
+      "current_theme": "C:\\trcc-src\\dist\\trcc-gui\\trcc-user\\data\\theme1920400\\Grey on Black",
+      "time_format": "24h",
+      "date_format": "yyyy/MM/dd",
+      "temp_unit": "C",
+      "overlay_enabled": true,
+      "mask_position": [
+        0,
+        0
+      ],
+      "fit_mode": "width",
+      "split_mode": 0,
+      "mask_path": null,
+      "background_path": null,
+      "mask_visible": true,
+      "background_mode": "theme",
+      "overlay_background": [
+        0,
+        0,
+        0
+      ],
+      "user_overlay_elements": [],
+      "mask_overlay_elements": null,
+      "slideshow_enabled": false,
+      "slideshow_interval_s": 60.0,
+      "slideshow_themes": []
+    }
+  },
+  "led_devices": {}
+}

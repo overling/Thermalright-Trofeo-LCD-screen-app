@@ -108,6 +108,7 @@ class UCThemeWeb(DownloadableThemeBrowser):
                  parent=None):
         self.current_category = 'all'
         self.web_directory = None
+        self._user_bg_dir = None
         self._resolution = ""
         self._download_fn = download_fn
         self._extract_fn = extract_fn
@@ -155,6 +156,13 @@ class UCThemeWeb(DownloadableThemeBrowser):
         log.info("uc_theme_web.set_web_directory: %s", path)
         self.web_directory = Path(path) if path else None
         self.load_themes()
+
+    def set_user_bg_dir(self, path):
+        """Set the user background directory where portable MP4s are stored."""
+        self._user_bg_dir = Path(path) if path else None
+
+    def _user_background_dir(self) -> Path | None:
+        return self._user_bg_dir
 
     def set_resolution(self, resolution: str):
         """Set resolution for cloud downloads (e.g., '320x320')."""
@@ -204,10 +212,15 @@ class UCThemeWeb(DownloadableThemeBrowser):
         # Extract PNGs from .7z if needed
         self._ensure_previews_extracted()
 
-        # Find cached MP4s (already downloaded)
+        # Find cached MP4s — check both the shipped web_directory and the
+        # user background dir (where portable installs store MP4s).
         cached = set()
         for mp4 in self.web_directory.glob('*.mp4'):
             cached.add(mp4.stem)
+        user_bg_dir = self._user_background_dir()
+        if user_bg_dir is not None and user_bg_dir != self.web_directory:
+            for mp4 in user_bg_dir.glob('*.mp4'):
+                cached.add(mp4.stem)
 
         # Scan for preview PNGs (matches Windows CheakWebFile)
         known_ids = []
@@ -222,11 +235,22 @@ class UCThemeWeb(DownloadableThemeBrowser):
         for theme_id in known_ids:
             is_local = theme_id in cached
             preview_path = self.web_directory / f"{theme_id}.png"
+            # Resolve the actual MP4 path — prefer user dir, fall back to shipped
+            mp4_path = None
+            user_bg = self._user_background_dir()
+            if user_bg is not None:
+                candidate = user_bg / f"{theme_id}.mp4"
+                if candidate.is_file():
+                    mp4_path = candidate
+            if mp4_path is None:
+                candidate = self.web_directory / f"{theme_id}.mp4"
+                if candidate.is_file():
+                    mp4_path = candidate
 
             themes.append(CloudThemeItem(
                 name=theme_id,
                 id=theme_id,
-                video=str(self.web_directory / f"{theme_id}.mp4") if is_local else None,
+                video=str(mp4_path) if is_local else None,
                 preview=str(preview_path) if preview_path.exists() else None,
                 is_local=is_local,
             ))
@@ -236,6 +260,7 @@ class UCThemeWeb(DownloadableThemeBrowser):
             self.current_category, len(themes), len(cached), self.web_directory,
         )
         self._populate_grid(themes)
+        self._set_movies_running(True)
 
     def _on_item_clicked(self, item_info: CloudThemeItem):
         """Handle click — play cached themes, download non-cached ones.

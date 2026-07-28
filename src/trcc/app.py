@@ -122,11 +122,10 @@ class App:
             catalog=CzhordeCatalog(
                 http=self.http,
                 # Catalog cache layout is ``cache_dir/<resolution>/<id>.mp4``
-                # — identical to ``paths.cloud_theme_dir(w, h)``.  Point
-                # the catalog at ``data/web`` directly so downloaded
-                # mp4s land where the GUI grid + ``CloudThemeService``
-                # already look (no duplicate copy under cloud_themes/).
-                cache_dir=platform.paths().data_dir() / "web",
+                # — identical to ``paths.user_background_dir(w, h)``.  Point
+                # the catalog at ``user_data/web`` so downloaded mp4s land
+                # where the GUI grid scans and survive app reinstalls.
+                cache_dir=platform.paths().user_data_dir() / "web",
             ),
             paths=platform.paths(),
         )

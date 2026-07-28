@@ -35,17 +35,6 @@ from ...core.ports import (
     MemorySource,
     SensorEnumerator,
 )
-from .hwmon import (
-    HwmonCpu,
-    SpdClock,
-    discover_amd_gpus,
-    discover_disk_temp,
-    discover_dram_temp,
-    discover_fans,
-    discover_intel_gpus,
-    find_cpu_temp_device,
-    scan_hwmon_devices,
-)
 from .nvml import discover_nvidia_gpus
 from .psutil_sources import ComputedIo, PsutilCpu, PsutilMemory
 
@@ -105,6 +94,8 @@ def _gpu_reading_keys(prefix: str) -> list[tuple[str, str, str]]:
         (f"{prefix}:fan", "fan", "%"),
         (f"{prefix}:vram_used", "gpu_memory", "MB"),
         (f"{prefix}:vram_total", "gpu_memory", "MB"),
+        (f"{prefix}:vram_used_gb", "gpu_memory", "GB"),
+        (f"{prefix}:vram_total_gb", "gpu_memory", "GB"),
     ]
 
 
@@ -372,6 +363,10 @@ class BaselineSensors(SensorEnumerator):
                 _store(r, f"{prefix}:vram_used", vram_used)
                 _store(r, f"{prefix}:vram_total", vram_total)
                 _store(r, f"{prefix}:vram_free", vram_free)
+                _store(r, f"{prefix}:vram_used_gb",
+                       vram_used / 1024.0 if vram_used is not None else None)
+                _store(r, f"{prefix}:vram_total_gb",
+                       vram_total / 1024.0 if vram_total is not None else None)
             if gpu is primary:
                 _store(r, "gpu:primary:temp", temp)
                 _store(r, "gpu:primary:usage", usage)
@@ -381,6 +376,10 @@ class BaselineSensors(SensorEnumerator):
                 _store(r, "gpu:primary:vram_used", vram_used)
                 _store(r, "gpu:primary:vram_total", vram_total)
                 _store(r, "gpu:primary:vram_free", vram_free)
+                _store(r, "gpu:primary:vram_used_gb",
+                       vram_used / 1024.0 if vram_used is not None else None)
+                _store(r, "gpu:primary:vram_total_gb",
+                       vram_total / 1024.0 if vram_total is not None else None)
 
         # Fans
         for fan in self._fans:
@@ -441,32 +440,3 @@ class BaselineSensors(SensorEnumerator):
     def _poll_extra(self, readings: dict[str, float]) -> None:
         """Override to add OS-native readings not covered by cpu/memory/gpus/fans."""
 
-
-# ── LinuxSensors — baseline + hwmon-discovered Linux sources ─────────
-
-
-def build_linux_sensors() -> BaselineSensors:
-    """Factory: scan hwmon + DRM + NVIDIA, compose a full Linux enumerator.
-
-    Falls back to BaselineSensors if /sys/class/hwmon doesn't exist (VM,
-    non-Linux accidentally calling this).
-    """
-    log.info("build_linux_sensors: called")
-    hwmon_devices = scan_hwmon_devices()
-    psutil_cpu = PsutilCpu()
-    cpu = HwmonCpu(psutil_cpu, find_cpu_temp_device(hwmon_devices))
-    gpus: list[GpuSource] = []
-    gpus.extend(discover_nvidia_gpus())
-    gpus.extend(discover_amd_gpus(hwmon_devices))
-    gpus.extend(discover_intel_gpus(hwmon_devices))
-    fans = discover_fans(hwmon_devices)
-    disks = discover_disk_temp(hwmon_devices)
-    dram = discover_dram_temp(hwmon_devices)
-    spd_clock = SpdClock()
-    log.info("Linux sensors: cpu_temp=%s, gpus=%d, fans=%d, disks=%d, dram=%d, "
-             "mem_clock=%s",
-             "yes" if cpu.temp() is not None else "no",
-             len(gpus), len(fans), len(disks), len(dram), spd_clock.clock())
-    return BaselineSensors(cpu=cpu, memory=PsutilMemory(),
-                           gpus=gpus, fans=fans, disks=disks, dram=dram,
-                           spd_clock=spd_clock)

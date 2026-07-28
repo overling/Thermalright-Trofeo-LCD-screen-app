@@ -117,6 +117,8 @@ class DataTablePanel(QFrame):
         self.text_input.setMaxLength(100)
         self.text_input.editingFinished.connect(
             lambda: self.text_changed.emit(self.text_input.text()))
+        self.text_input.textEdited.connect(
+            lambda: self.text_changed.emit(self.text_input.text()))
         self.text_input.setVisible(False)
 
         self._current_mode = -1
@@ -351,6 +353,7 @@ class MaskPanel(DisplayModePanel):
 
     def __init__(self, parent=None):
         super().__init__("mask", ["Load", "Upload"], parent)
+        self.setFixedSize(Sizes.DISPLAY_MODE_W, Sizes.DISPLAY_MODE_H + 20)
         # Reposition action buttons to align with left-side text labels (DPI-scaled)
         if len(self._action_buttons) >= 1:
             self._action_buttons[0].setGeometry(*_s(115, 30, 40, 40))  # Load/Masks

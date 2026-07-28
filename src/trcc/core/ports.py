@@ -668,6 +668,8 @@ class SensorEnumerator(ABC):
             gpu_vram_used=readings.get("gpu:primary:vram_used", 0.0),
             gpu_vram_total=readings.get("gpu:primary:vram_total", 0.0),
             gpu_vram_free=readings.get("gpu:primary:vram_free", 0.0),
+            gpu_vram_used_gb=readings.get("gpu:primary:vram_used_gb", 0.0),
+            gpu_vram_total_gb=readings.get("gpu:primary:vram_total_gb", 0.0),
             mem_percent=_safe(mem.percent),
             mem_available=_safe(mem.available),
             mem_used=readings.get("memory:used", 0.0),
