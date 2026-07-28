@@ -277,8 +277,11 @@ class LCDHandler(BaseHandler):
         self._restore_slideshow(ds)
         self._update_device_info()
 
+        self.log.info("_refresh: auto_loaded=%s current_theme_path=%s ds.current_theme=%s",
+                      auto_loaded, self._pm.state.current_theme_path, ds.current_theme)
         if auto_loaded:
             return
+        self.log.info("_refresh: calling _restore_theme_and_preview first_load=%s", first_load)
         self._restore_theme_and_preview(first_load=first_load)
 
     def _on_data_ready(self) -> None:
@@ -581,9 +584,14 @@ class LCDHandler(BaseHandler):
         return r
 
     def export_config(self, path: Path) -> None:
+        theme_path = self.current_theme_path
+        if theme_path is not None:
+            theme_name = theme_path.name
+        else:
+            theme_name = path.stem
         r = self._app.dispatch(ExportTheme(
             key=self._device_key,
-            theme_name=path.stem,
+            theme_name=theme_name,
             archive_path=path,
         ))
         self._w['preview'].set_status(r.message)
@@ -1435,6 +1443,8 @@ class LCDHandler(BaseHandler):
         self._w['theme_local'].set_themes(themes)
         if web_dir:
             self._w['theme_web'].set_web_directory(web_dir)
+        user_bg_dir = self._app.platform.paths().user_background_dir(bw, bh)
+        self._w['theme_web'].set_user_bg_dir(user_bg_dir)
         self._w['theme_web'].set_resolution(f'{bw}x{bh}')
         if masks_dir:
             self._w['theme_mask'].set_mask_directory(masks_dir)

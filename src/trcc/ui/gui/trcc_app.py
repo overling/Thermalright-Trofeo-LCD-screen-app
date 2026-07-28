@@ -405,7 +405,7 @@ class TRCCApp(QMainWindow):
         self._scale_factor = 1.0
         self._is_maximized = False
 
-        self.setWindowTitle("TRCC-Linux - Thermalright LCD Control Center")
+        self.setWindowTitle("TRCC - Thermalright LCD Control Center")
         self.setMinimumSize(Sizes.WINDOW_W, Sizes.WINDOW_H)
         self.resize(Sizes.WINDOW_W, Sizes.WINDOW_H)
         if not decorated:
@@ -958,7 +958,7 @@ class TRCCApp(QMainWindow):
         self.setWindowIcon(icon)
 
         self._tray = QSystemTrayIcon(icon, self)
-        self._tray.setToolTip("TRCC Linux")
+        self._tray.setToolTip("TRCC")
 
         menu = QMenu()
         if (show_action := menu.addAction("Show/Hide")):

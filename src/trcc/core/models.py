@@ -696,6 +696,8 @@ HARDWARE_METRICS: dict[tuple[int, int], str] = {
     (1, 5): "gpu_vram_used",
     (1, 6): "gpu_vram_free",
     (1, 7): "gpu_vram_total",
+    (1, 8): "gpu_vram_used_gb",
+    (1, 9): "gpu_vram_total_gb",
     # MEM (main_count=2)
     (2, 1): "mem_percent",
     (2, 2): "mem_clock",
@@ -737,7 +739,8 @@ CATEGORY_NAMES: dict[int, str] = {
 # Per-category sub-metric labels (matches the legacy uc_theme_setting grid).
 SUB_METRICS: dict[int, dict[int, str]] = {
     0: {1: "Temp",  2: "Usage", 3: "Freq",     4: "Power"},
-    1: {1: "Temp",  2: "Usage", 3: "Clock",    4: "Power"},
+    1: {1: "Temp",  2: "Usage", 3: "Clock",    4: "Power",
+         5: "VRAM",  6: "Free",  7: "Total",    8: "VRAM GB", 9: "Total GB"},
     2: {1: "Used%", 2: "Clock", 3: "Used",     4: "Free"},
     3: {1: "Read",  2: "Write", 3: "Activity", 4: "Temp"},
     4: {1: "Down",  2: "Up",    3: "Total",    4: "Ping"},
@@ -862,6 +865,8 @@ def format_metric(
         if value >= 1024:
             return f"{value / 1024:.1f}GB"
         return f"{value:.0f}MB"
+    if metric in ("gpu_vram_used_gb", "gpu_vram_total_gb"):
+        return f"{value:.1f}GB"
     return f"{value:.1f}"
 
 
@@ -1121,6 +1126,8 @@ class HardwareMetrics:
     gpu_vram_used: float = 0.0
     gpu_vram_total: float = 0.0
     gpu_vram_free: float = 0.0
+    gpu_vram_used_gb: float = 0.0
+    gpu_vram_total_gb: float = 0.0
     mem_temp: float = 0.0
     mem_percent: float = 0.0
     mem_clock: float = 0.0

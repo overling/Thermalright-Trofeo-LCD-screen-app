@@ -42,7 +42,7 @@ class TrayController:
         *,
         minimize_on_close: bool,
         icon: QIcon,
-        tooltip: str = "TRCC Linux",
+        tooltip: str = "TRCC",
     ) -> None:
         self._window = window
         self._minimize_on_close = minimize_on_close

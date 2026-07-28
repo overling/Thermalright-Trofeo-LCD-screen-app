@@ -56,6 +56,39 @@ class _ArchiveExtractor(Protocol):
     def extract(self, archive: Path, target: Path) -> bool: ...
 
 
+def _find_7z() -> str | None:
+    """Locate the 7z executable.
+
+    Search order:
+      1. Bundled in ``_internal/trcc/data/bin/`` (PyInstaller onedir)
+      2. Bundled next to the exe (portable layout)
+      3. System PATH
+      4. Common Windows install locations
+    Returns the full path to 7z.exe, or None if not found.
+    """
+    import sys
+    exe_dir = Path(sys.executable).parent
+    bundled_candidates = [
+        exe_dir / "_internal" / "trcc" / "data" / "bin" / "7z.exe",
+        exe_dir / "data" / "bin" / "7z.exe",
+        exe_dir / "7z.exe",
+    ]
+    for candidate in bundled_candidates:
+        if candidate.is_file():
+            return str(candidate)
+    found = shutil.which("7z")
+    if found:
+        return found
+    if os.name == "nt":
+        for candidate in (
+            r"C:\Program Files\7-Zip\7z.exe",
+            r"C:\Program Files (x86)\7-Zip\7z.exe",
+        ):
+            if os.path.isfile(candidate):
+                return candidate
+    return None
+
+
 class SevenZipExtractor:
     """7z CLI wrapper with zip-slip guard.
 
@@ -69,19 +102,20 @@ class SevenZipExtractor:
 
     def extract(self, archive: Path, target: Path) -> bool:
         target.mkdir(parents=True, exist_ok=True)
-        try:
-            listing = subprocess.run(
-                ["7z", "l", "-slt", str(archive)],
-                capture_output=True, text=True, timeout=30,
-                creationflags=_NO_WINDOW,
-            )
-        except FileNotFoundError:
+        seven_zip = _find_7z()
+        if not seven_zip:
             log.warning(
-                "7z not on PATH — cannot extract %s.  Install p7zip / 7-Zip "
-                "to populate the theme browser.",
+                "7z not found on PATH or in common install locations — "
+                "cannot extract %s.  Install 7-Zip to populate the theme browser.",
                 archive.name,
             )
             return False
+        try:
+            listing = subprocess.run(
+                [seven_zip, "l", "-slt", str(archive)],
+                capture_output=True, text=True, timeout=30,
+                creationflags=_NO_WINDOW,
+            )
         except (OSError, subprocess.SubprocessError) as e:
             log.warning("7z listing failed for %s: %s: %s",
                         archive.name, type(e).__name__, e)
@@ -102,7 +136,7 @@ class SevenZipExtractor:
                 return False
         try:
             result = subprocess.run(
-                ["7z", "x", str(archive), f"-o{target}", "-y"],
+                [seven_zip, "x", str(archive), f"-o{target}", "-y"],
                 capture_output=True, timeout=120,
                 creationflags=_NO_WINDOW,
             )
