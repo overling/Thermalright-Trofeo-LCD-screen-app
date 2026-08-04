@@ -37,8 +37,25 @@ def oriented_theme_path(
     ``theme480854``).  ``current_theme`` is an absolute path into ONE of them;
     at a different orientation the same-named theme in the matching dir is the
     variant to load — otherwise a portrait-rotated device shows the landscape
-    theme on a portrait canvas (and vice versa).  Falls back to ``stored`` when
-    no oriented variant is on disk (the renderer pixel-rotates the art).
+    theme on a portrait canvas (and vice versa).
+
+    Resolution order when the re-rooted candidate is missing:
+
+    1.  Check the *other* tree (shipped ↔ user) for the same name — a
+        user-saved theme and a shipped theme can share a name, and the
+        stored path records which tree the user picked, but after a
+        version upgrade the user-saved theme may have been migrated to
+        the shipped tree or vice versa.
+    2.  Fall back to ``stored`` **only** when its parent dir is a theme
+        catalog for the same resolution pair in the swapped orientation
+        (e.g. ``theme854480`` → ``theme480854``).  The renderer can
+        pixel-rotate the art in that case.
+    3.  Otherwise return the non-existent candidate so ``LoadTheme``
+        fails with a clear "theme not found" error instead of silently
+        loading wrong-resolution art.  This happens when a version
+        upgrade changed the handshake resolution mapping (e.g.
+        ``theme1920440`` → ``theme1920400``) and the old catalog's theme
+        has a different pixel size than the device expects.
 
     ``degrees`` is the authoritative orientation; pass it from an
     ``OrientationChanged`` event (``App._on_orientation_changed``) where
@@ -58,15 +75,50 @@ def oriented_theme_path(
     # selected (their saved theme vs the shipped one).  A user-saved theme and
     # a shipped theme can share a name (they coexist); re-resolving shipped-first
     # would silently swap the user's last preview for the shipped default of the
-    # same name on every rotation/restore, losing their changes. Fall back to
-    # ``stored`` when the same-name oriented variant isn't on disk in that tree
-    # (the renderer pixel-rotates the art).
-    if stored.is_relative_to(paths.user_content_dir()):
-        base = paths.user_theme_dir(bw, bh)
-    else:
-        base = paths.theme_dir(bw, bh)
+    # same name on every rotation/restore, losing their changes.
+    is_user = stored.is_relative_to(paths.user_content_dir())
+    base = paths.user_theme_dir(bw, bh) if is_user else paths.theme_dir(bw, bh)
     cand = base / stored.name
-    return cand if cand.exists() else stored
+    if cand.exists():
+        return cand
+
+    # Step 1: check the other tree (shipped ↔ user) for the same name.
+    alt_base = paths.theme_dir(bw, bh) if is_user else paths.user_theme_dir(bw, bh)
+    alt_cand = alt_base / stored.name
+    if alt_cand.exists():
+        log.info(
+            "oriented_theme_path: %s not in %s — found in other tree %s",
+            stored.name, base, alt_cand,
+        )
+        return alt_cand
+
+    # Step 2: fall back to stored ONLY when its parent dir is a theme
+    # catalog for the same resolution pair in the swapped orientation.
+    # The renderer can pixel-rotate the art; a theme from a completely
+    # different resolution (e.g. after a version upgrade) would be
+    # wrong-sized and must NOT be used.
+    if stored.is_dir():
+        swapped = {paths.theme_dir(bw, bh).name,
+                   paths.theme_dir(bh, bw).name,
+                   paths.user_theme_dir(bw, bh).name,
+                   paths.user_theme_dir(bh, bw).name}
+        if stored.parent.name in swapped:
+            log.info(
+                "oriented_theme_path: %s not in target catalogs — falling "
+                "back to stored %s (same resolution, orientation swap)",
+                stored.name, stored,
+            )
+            return stored
+
+    # Step 3: no same-resolution variant anywhere — return the non-existent
+    # candidate so LoadTheme fails clearly instead of loading wrong-sized art.
+    log.warning(
+        "oriented_theme_path: %s not found in %s or %s, and stored path "
+        "%s is from a different resolution catalog — returning "
+        "non-existent candidate %s",
+        stored.name, base, alt_base, stored, cand,
+    )
+    return cand
 
 
 _VIDEO_EXTS_FOR_SAVE = frozenset({".mp4", ".mov", ".webm", ".zt", ".mkv", ".avi"})
