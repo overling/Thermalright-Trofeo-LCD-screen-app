@@ -331,8 +331,8 @@ class UCSystemInfo(QWidget):
 
         # Load config and auto-map any empty bindings
         self._config.load()
-        self._config.auto_map(self._enumerator)
-        self._config.save()
+        if self._config.auto_map(self._enumerator):
+            self._config.save()
         log.info(
             "UCSystemInfo._setup_ui: configured panels=%d",
             len(self._config.panels),

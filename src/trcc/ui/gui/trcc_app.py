@@ -824,6 +824,7 @@ class TRCCApp(QMainWindow):
             'image_cut': self.uc_image_cut,
             'video_cut': self.uc_video_cut,
             'rotation_combo': self.rotation_combo,
+            'device_info_label': self.device_info_label,
         }
         log.info("LCD handler added: %s", key)
         return LCDHandler(
@@ -847,6 +848,10 @@ class TRCCApp(QMainWindow):
             remaining = list(self._handlers)
             if remaining:
                 self._activate_device(remaining[0])
+            else:
+                # No device left — clear the fingerprint line so it doesn't
+                # show a removed device's bytes.
+                self.device_info_label.clear()
 
         self._refresh_sidebar()
 
@@ -1204,6 +1209,19 @@ class TRCCApp(QMainWindow):
         self.rotation_combo.setToolTip("LCD rotation")
         self.rotation_combo.currentIndexChanged.connect(self._on_rotation_change)
 
+        # Device fingerprint line — name · vid:pid · FBL/PM/SUB, selectable so
+        # it can be copied straight into a bug report / porting note.
+        self.device_info_label = QLabel(self.form_container)
+        self.device_info_label.setGeometry(*Layout.DEVICE_INFO)
+        self.device_info_label.setTextInteractionFlags(
+            Qt.TextInteractionFlag.TextSelectableByMouse
+            | Qt.TextInteractionFlag.TextSelectableByKeyboard
+        )
+        self.device_info_label.setWordWrap(True)
+        self.device_info_label.setStyleSheet(
+            "QLabel { color: #9AA0A6; font-family: monospace; font-size: 10px; }")
+        self.device_info_label.setToolTip("Device fingerprint (selectable)")
+
         from ...core.registry import BRIGHTNESS_STEPS
         self._ldd_pixmaps: dict = {}
         for i, percent in enumerate(BRIGHTNESS_STEPS, start=1):
@@ -1265,8 +1283,8 @@ class TRCCApp(QMainWindow):
         """
         import re
         from .constants import Sizes
-        dpi_scale = Sizes.WINDOW_W / 1454.0 if Sizes.WINDOW_W > 1454 else 1.0
-        if dpi_scale <= 1.01:
+        dpi_scale = Sizes.WINDOW_W / 1454.0
+        if abs(dpi_scale - 1.0) <= 0.01:
             return
         px_pattern = re.compile(r'font-size:\s*(\d+(?:\.\d+)?)px')
         pt_pattern = re.compile(r'font-size:\s*(\d+(?:\.\d+)?)pt')
@@ -2822,8 +2840,11 @@ class TRCCApp(QMainWindow):
         new_w = event.size().width()
         new_h = event.size().height()
         scale = min(new_w / self._base_w, new_h / self._base_h)
-        if scale < 1.0:
-            scale = 1.0
+        # Allow <1.0 so widgets stay proportional when the OS clamps the
+        # window below the design minimum on small screens.  Skip <0.5:
+        # that's a 0-size minimize event, not a real resize.
+        if scale < 0.5:
+            return
         if abs(scale - self._scale_factor) > 0.001:
             self._scale_factor = scale
             self._apply_scale(scale)

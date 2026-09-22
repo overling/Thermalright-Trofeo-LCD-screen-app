@@ -29,7 +29,7 @@ log = logging.getLogger(__name__)
 
 def _dpi() -> float:
     """Return the DPI scale factor (base 1454px window width)."""
-    return Sizes.WINDOW_W / 1454.0 if Sizes.WINDOW_W > 1454 else 1.0
+    return Sizes.WINDOW_W / 1454.0
 
 
 def _s(*vals: int) -> tuple[int, ...]:

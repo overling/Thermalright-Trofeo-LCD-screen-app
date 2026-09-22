@@ -222,8 +222,11 @@ class SysInfoConfig:
         except OSError as e:
             log.error("Failed to save sysinfo config %s: %s", self._path, e)
 
-    def auto_map(self, enumerator) -> None:
+    def auto_map(self, enumerator) -> bool:
         """Fill every empty ``sensor_id`` from ``_PANEL_ROW_BINDINGS``.
+
+        Returns ``True`` if any binding was changed (caller can skip
+        ``save()`` when ``False``).
 
         Two passes:
 
@@ -254,13 +257,13 @@ class SysInfoConfig:
                 "auto_map: enumerator %r has no discover() — skipping",
                 type(enumerator).__name__,
             )
-            return
+            return False
         try:
             readings = list(discover())
         except Exception as e:
             log.warning("auto_map: discover() raised %s: %s",
                         type(e).__name__, e)
-            return
+            return False
 
         bound = 0
         missing: list[tuple[int, int, str]] = []
@@ -340,6 +343,7 @@ class SysInfoConfig:
                 "auto_map: targets not available on this host: %s",
                 ["{}/{}={}".format(*m) for m in missing],
             )
+        return bound > 0
 
     @staticmethod
     def defaults() -> list[PanelConfig]:

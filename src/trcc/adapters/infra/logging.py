@@ -4,7 +4,9 @@ Replaces legacy ``adapters/infra/diagnostics.py``'s 200-line logging
 block with a focused configurator that:
 
 * writes to ``Paths.log_file()`` with rotation at 1 MB × 5 backups so
-  long-lived daemons don't fill the disk;
+  long-lived daemons don't fill the disk — **only when ``TRCC_DEBUG=1``
+  is set**; without it, logging goes to stderr only and no files are
+  written;
 * also writes a sibling ``<stem>.latest.log`` truncated fresh on every
   process start, so "what did THIS launch do" is always the whole file
   with no rotation/offset math — the rotating log keeps cross-run
@@ -21,6 +23,7 @@ from __future__ import annotations
 
 import inspect
 import logging
+import os
 import sys
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
@@ -91,8 +94,6 @@ def configure_logging(
     logging mid-run (e.g. when log_file moves after a config reload)
     without piling up duplicate handlers.
     """
-    log_file.parent.mkdir(parents=True, exist_ok=True)
-
     root = logging.getLogger()
     root.setLevel(level)
 
@@ -105,33 +106,38 @@ def configure_logging(
     formatter = logging.Formatter(_LOG_FORMAT, datefmt=_LOG_DATEFMT)
     context_filter = ClassContextFilter()
 
-    file_handler = RotatingFileHandler(
-        log_file, maxBytes=max_bytes, backupCount=backup_count,
-        encoding="utf-8",
-    )
-    file_handler.setLevel(level)
-    file_handler.setFormatter(formatter)
-    file_handler.addFilter(context_filter)
-    setattr(file_handler, _HANDLER_TAG, True)
-    root.addHandler(file_handler)
-
-    # Per-run log: a SECOND file truncated fresh on open (mode="w").
-    # ``configure_logging`` runs once per process (CLI root callback /
-    # launch entry point), so the truncate happens exactly once per app
-    # init and the file holds this run alone.  Still a RotatingFileHandler
-    # so a long-lived ``-v`` session (video DEBUG can emit ~30–90 lines/s)
-    # can't grow the file without bound — it rolls at ``latest_max_bytes``
-    # keeping one backup (worst case 2× the cap on disk).
+    _file_logging = os.environ.get("TRCC_DEBUG") == "1"
     latest_file = log_file.with_name(f"{log_file.stem}.latest{log_file.suffix}")
-    latest_handler = RotatingFileHandler(
-        latest_file, mode="w", maxBytes=latest_max_bytes, backupCount=1,
-        encoding="utf-8",
-    )
-    latest_handler.setLevel(level)
-    latest_handler.setFormatter(formatter)
-    latest_handler.addFilter(context_filter)
-    setattr(latest_handler, _HANDLER_TAG, True)
-    root.addHandler(latest_handler)
+
+    if _file_logging:
+        log_file.parent.mkdir(parents=True, exist_ok=True)
+
+        file_handler = RotatingFileHandler(
+            log_file, maxBytes=max_bytes, backupCount=backup_count,
+            encoding="utf-8",
+        )
+        file_handler.setLevel(level)
+        file_handler.setFormatter(formatter)
+        file_handler.addFilter(context_filter)
+        setattr(file_handler, _HANDLER_TAG, True)
+        root.addHandler(file_handler)
+
+        # Per-run log: a SECOND file truncated fresh on open (mode="w").
+        # ``configure_logging`` runs once per process (CLI root callback /
+        # launch entry point), so the truncate happens exactly once per app
+        # init and the file holds this run alone.  Still a RotatingFileHandler
+        # so a long-lived ``-v`` session (video DEBUG can emit ~30–90 lines/s)
+        # can't grow the file without bound — it rolls at ``latest_max_bytes``
+        # keeping one backup (worst case 2× the cap on disk).
+        latest_handler = RotatingFileHandler(
+            latest_file, mode="w", maxBytes=latest_max_bytes, backupCount=1,
+            encoding="utf-8",
+        )
+        latest_handler.setLevel(level)
+        latest_handler.setFormatter(formatter)
+        latest_handler.addFilter(context_filter)
+        setattr(latest_handler, _HANDLER_TAG, True)
+        root.addHandler(latest_handler)
 
     stderr_handler = logging.StreamHandler(stream=sys.stderr)
     stderr_handler.setLevel(stderr_level)
@@ -142,7 +148,9 @@ def configure_logging(
 
     log.info(
         "configure_logging: file=%s latest=%s level=%s rotate=%d×%d stderr=%s",
-        log_file, latest_file, logging.getLevelName(level),
+        log_file if _file_logging else "(disabled)",
+        latest_file if _file_logging else "(disabled)",
+        logging.getLevelName(level),
         max_bytes, backup_count, logging.getLevelName(stderr_level),
     )
 

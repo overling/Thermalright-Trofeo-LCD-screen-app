@@ -166,6 +166,13 @@ def run(platform: Any, *, decorated: bool = False,
             _scale = _scale / _dpr
             if _scale < 1.0:
                 _scale = 1.0
+        # Fit-to-screen may legitimately require <1.0.  The floors above
+        # only prevent the DPI math from *shrinking* the UI; they must
+        # not block fitting a screen smaller than the 1454x800 design
+        # (e.g. 1440p @ 200% scaling = 1280x720 logical).  Without this
+        # the window is larger than the display and widgets get clipped.
+        if _max_scale < 1.0:
+            _scale = max(_max_scale, 0.5)
         log.info("run: screen=%s dpi=%d dpr=%.2f scale=%.2f max_scale=%.2f avail=%dx%d",
                  _screen.name(), _dpi, _dpr,
                  _scale, _max_scale,

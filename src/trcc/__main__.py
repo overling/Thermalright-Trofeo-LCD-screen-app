@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """Allow running as: python -m trcc
 
-Sets up crash logging BEFORE any imports — ensures every OS gets
-a log file at ~/.trcc/trcc.log even if the app crashes on startup.
+Sets up crash logging BEFORE any imports.  By default logging goes to
+stderr only — no files are written.  Set ``TRCC_DEBUG=1`` to enable a
+log file at ~/.trcc/trcc.log (or next to the exe for portable builds).
 """
 
 import logging
@@ -12,9 +13,7 @@ import sys
 from pathlib import Path
 
 # Early logging — catches import failures, DI errors, platform issues.
-# Must run before any trcc imports. All 4 OS's get a log file.
-# Portable builds (PyInstaller or .trcc/ marker next to exe) keep the log
-# next to the executable; non-portable dev runs use ~/.trcc/.
+# Must run before any trcc imports.  File logging is opt-in via TRCC_DEBUG.
 _exe_dir = Path(sys.executable).parent
 if (
     getattr(sys, "frozen", False)
@@ -24,7 +23,6 @@ if (
     _log_dir = _exe_dir / '.trcc'
 else:
     _log_dir = Path.home() / '.trcc'
-_log_dir.mkdir(parents=True, exist_ok=True)
 _log_path = _log_dir / 'trcc.log'
 
 
@@ -45,14 +43,18 @@ else:
     _rotating_handler_cls = logging.handlers.RotatingFileHandler
 
 
-_early_handler = _rotating_handler_cls(
-    _log_path, maxBytes=1_000_000, backupCount=3,
-    encoding='utf-8', errors='replace',
-)
-# Tag the early shim so ``adapters.infra.logging.configure_logging`` knows
-# to swap it out when it runs.  Without the tag, both handlers stay
-# attached and every log line gets written twice.
-_early_handler._trcc_handler = True  # type: ignore[attr-defined]
+if os.environ.get("TRCC_DEBUG") == "1":
+    _log_dir.mkdir(parents=True, exist_ok=True)
+    _early_handler: logging.Handler = _rotating_handler_cls(
+        _log_path, maxBytes=1_000_000, backupCount=3,
+        encoding='utf-8', errors='replace',
+    )
+    # Tag the early shim so ``adapters.infra.logging.configure_logging`` knows
+    # to swap it out when it runs.  Without the tag, both handlers stay
+    # attached and every log line gets written twice.
+    _early_handler._trcc_handler = True  # type: ignore[attr-defined]
+else:
+    _early_handler = logging.NullHandler()
 logging.basicConfig(
     level=logging.DEBUG,
     format='%(asctime)s [%(levelname)s] %(name)s.%(funcName)s: %(message)s',
